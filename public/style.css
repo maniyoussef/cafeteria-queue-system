@@ -1038,3 +1038,192 @@ input[type="text"]:focus, select:focus {
   color: var(--success);
   margin: 1rem 0;
 }
+
+/* FAILURE SCREENS & ERROR UI STYLING */
+
+/* 1. Offline & Network Failure Modal */
+.offline-backdrop {
+  z-index: 2000;
+  background: rgba(5, 8, 17, 0.92);
+}
+
+.error-card-glow {
+  border: 2px solid var(--danger);
+  box-shadow: 0 0 50px var(--danger-glow);
+}
+
+.error-badge-icon {
+  width: 70px;
+  height: 70px;
+  background: hsla(350, 89%, 60%, 0.15);
+  border: 2px solid var(--danger);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.25rem auto;
+  color: var(--danger);
+  animation: pulse-ring 2s infinite;
+}
+
+.error-badge-icon i {
+  width: 36px;
+  height: 36px;
+}
+
+.error-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+
+.error-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 1.25rem;
+}
+
+.retry-countdown-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--warning);
+  margin-bottom: 1.25rem;
+}
+
+.spinner-dot {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--warning);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.troubleshoot-accordion {
+  margin-bottom: 1.5rem;
+  text-align: left;
+}
+
+.troubleshoot-accordion details {
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+}
+
+.troubleshoot-accordion summary {
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.troubleshoot-accordion ul {
+  margin-top: 0.75rem;
+  padding-left: 1.25rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+/* 2. Ticket Expired Callout Banner */
+.expired-callout-banner {
+  background: hsla(350, 89%, 60%, 0.12);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.expired-anim-icon i {
+  width: 36px;
+  height: 36px;
+}
+
+.expired-callout-banner h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-top: 0.4rem;
+}
+
+.expired-callout-banner p {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+/* 3. Toast Notifications System */
+.toast-container {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  z-index: 3000;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1.4rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 400px;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.toast-error {
+  border-color: var(--danger);
+  background: hsla(350, 89%, 10%, 0.95);
+  box-shadow: 0 0 20px var(--danger-glow);
+}
+
+.toast-error i { color: var(--danger); }
+
+.toast-warning {
+  border-color: var(--warning);
+  background: hsla(38, 95%, 10%, 0.95);
+  box-shadow: 0 0 20px var(--warning-glow);
+}
+
+.toast-warning i { color: var(--warning); }
+
+.toast-success {
+  border-color: var(--success);
+  background: hsla(155, 75%, 10%, 0.95);
+  box-shadow: 0 0 20px var(--success-glow);
+}
+
+.toast-success i { color: var(--success); }
+

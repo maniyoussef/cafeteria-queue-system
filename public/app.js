@@ -20,17 +20,35 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // Socket.IO Connection
-  const socket = io();
+  const socket = io({
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 3000,
+    reconnectionAttempts: Infinity
+  });
+
+  let retryTimerInterval = null;
+  let retrySecondsLeft = 3;
 
   // Socket Event Listeners
   socket.on('connect', () => {
     state.connected = true;
     updateSocketStatusUI(true);
+    hideOfflineOverlay();
+    showToast('Connected to VM1 Cafeteria Server', 'success');
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
     state.connected = false;
     updateSocketStatusUI(false);
+    showOfflineOverlay();
+    showToast(`Network connection lost (${reason}). Retrying...`, 'error');
+  });
+
+  socket.on('connect_error', (error) => {
+    state.connected = false;
+    updateSocketStatusUI(false);
+    showOfflineOverlay();
   });
 
   socket.on('queue:updated', (data) => {
@@ -63,6 +81,77 @@ document.addEventListener('DOMContentLoaded', () => {
   initStaffView();
   initTestBenchView();
   initReadyModal();
+  initOfflineOverlay();
+
+  /* ==========================================================================
+     TOAST NOTIFICATION & FAILURE UI CONTROLLERS
+     ========================================================================== */
+  function showToast(message, type = 'error') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    let iconName = 'alert-circle';
+    if (type === 'success') iconName = 'check-circle';
+    if (type === 'warning') iconName = 'alert-triangle';
+
+    toast.innerHTML = `<i data-lucide="${iconName}"></i> <span>${message}</span>`;
+    container.appendChild(toast);
+
+    if (window.lucide) window.lucide.createIcons();
+
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(100%)';
+      toast.style.transition = 'all 0.3s ease';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  function showOfflineOverlay() {
+    const overlay = document.getElementById('offline-overlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+
+    if (retryTimerInterval) clearInterval(retryTimerInterval);
+    retrySecondsLeft = 3;
+
+    const timerText = document.getElementById('offline-retry-timer');
+    if (timerText) timerText.textContent = `Auto-retrying connection in ${retrySecondsLeft}s...`;
+
+    retryTimerInterval = setInterval(() => {
+      retrySecondsLeft -= 1;
+      if (retrySecondsLeft <= 0) {
+        retrySecondsLeft = 3;
+        socket.connect();
+      }
+      if (timerText) timerText.textContent = `Auto-retrying connection in ${retrySecondsLeft}s...`;
+    }, 1000);
+  }
+
+  function hideOfflineOverlay() {
+    const overlay = document.getElementById('offline-overlay');
+    if (overlay) overlay.style.display = 'none';
+    if (retryTimerInterval) clearInterval(retryTimerInterval);
+  }
+
+  function initOfflineOverlay() {
+    const reconnectBtn = document.getElementById('btn-manual-reconnect');
+    if (reconnectBtn) {
+      reconnectBtn.addEventListener('click', () => {
+        reconnectBtn.disabled = true;
+        reconnectBtn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Connecting...`;
+        socket.connect();
+        setTimeout(() => {
+          reconnectBtn.disabled = false;
+          reconnectBtn.innerHTML = `<i data-lucide="refresh-cw"></i> Retry Connection Now`;
+          if (window.lucide) window.lucide.createIcons();
+        }, 1500);
+      });
+    }
+  }
 
   /* ==========================================================================
      AUDIO SYNTHESIZER (Web Audio API Chime)
@@ -409,10 +498,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
 
       if (!data.success) {
-        alert(data.message || 'Could not serve next student.');
+        showToast(data.message || 'No students currently waiting in this line.', 'warning');
+      } else {
+        showToast(`Calling Next: Ticket #${data.ticket.ticketNumber} (${data.ticket.studentName})`, 'success');
       }
     } catch (err) {
-      alert('Error serving next student: ' + err.message);
+      showToast('Server Communication Error: ' + err.message, 'error');
     }
   }
 

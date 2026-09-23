@@ -208,6 +208,13 @@
                 <p>Please proceed to <strong id="ready-counter-name">Hot Meals Counter</strong> to pick up ticket <strong id="ready-ticket-num">HM-101</strong></p>
               </div>
 
+              <!-- Ticket Expired / Cancelled Failure Screen Banner -->
+              <div class="expired-callout-banner" id="ticket-expired-banner" style="display: none;">
+                <div class="expired-anim-icon"><i data-lucide="alert-circle"></i></div>
+                <h3>TICKET EXPIRED OR RESET</h3>
+                <p>Your ticket is no longer active in the line (queue was reset or ticket was cancelled).</p>
+              </div>
+
               <div class="tracker-actions">
                 <button class="btn btn-danger btn-block" id="btn-cancel-ticket">
                   <i data-lucide="x-circle"></i> Cancel / Leave Queue
@@ -435,6 +442,40 @@
         </button>
       </div>
     </div>
+
+    <!-- User-Friendly Failure Screen 1: Server Disconnection & Network Offline Modal -->
+    <div class="modal-backdrop offline-backdrop" id="offline-overlay" style="display: none;">
+      <div class="modal-card error-card-glow">
+        <div class="error-badge-icon">
+          <i data-lucide="wifi-off"></i>
+        </div>
+        <h2 class="error-title">Server Connection Lost</h2>
+        <p class="error-desc">Unable to communicate with VM1 Cafeteria Server. Network connection was interrupted or server is restarting.</p>
+        
+        <div class="retry-countdown-box">
+          <span class="spinner-dot"></span>
+          <span id="offline-retry-timer">Auto-retrying connection in 3s...</span>
+        </div>
+
+        <div class="troubleshoot-accordion">
+          <details>
+            <summary><i data-lucide="help-circle"></i> Multi-VM Troubleshooting Tips</summary>
+            <ul>
+              <li>Ensure <strong>VM1 Server</strong> is running (<code>npm start</code>).</li>
+              <li>Verify your VM network interface (e.g. <code>http://192.168.x.x:3000</code>).</li>
+              <li>Check firewall settings on host server port 3000.</li>
+            </ul>
+          </details>
+        </div>
+
+        <button class="btn btn-warning btn-block btn-lg" id="btn-manual-reconnect">
+          <i data-lucide="refresh-cw"></i> Retry Connection Now
+        </button>
+      </div>
+    </div>
+
+    <!-- Toast Notification System Container for Failure & Alert Messages -->
+    <div class="toast-container" id="toast-container"></div>
 
   </div>
 

@@ -1,0 +1,27 @@
+{
+  "name": "cafeteria-queue-management",
+  "version": "1.0.0",
+  "description": "Real-time FIFO Cafeteria Queue Management Web App with multi-VM network support and atomic concurrency protection",
+  "main": "server/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "test:concurrency": "node scripts/test-concurrency.js"
+  },
+  "keywords": [
+    "fifo",
+    "queue",
+    "cafeteria",
+    "real-time",
+    "socket.io",
+    "express"
+  ],
+  "author": "University Cafeteria Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

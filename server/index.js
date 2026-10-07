@@ -194,7 +194,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 const HOST = '0.0.0.0'; // Listen on all network interfaces for multi-VM client access
 
 server.on('error', (err) => {

@@ -366,7 +366,7 @@
               <div class="ip-list" id="network-ip-list">
                 <div class="ip-box">
                   <span class="label">Local Server Host</span>
-                  <code>http://localhost:3000</code>
+                  <code>http://10.102.148.12:8080</code>
                 </div>
               </div>
 
@@ -374,7 +374,7 @@
                 <h3><i data-lucide="qr-code"></i> Mobile / VM Quick Connect QR Code</h3>
                 <p>Scan with phone or open URL in VM browser:</p>
                 <div id="qrcode-container"></div>
-                <p class="qr-url-text" id="qr-url-display">http://localhost:3000</p>
+                <p class="qr-url-text" id="qr-url-display">http://10.102.148.12:8080</p>
               </div>
             </div>
           </div>
@@ -462,8 +462,8 @@
             <summary><i data-lucide="help-circle"></i> Multi-VM Troubleshooting Tips</summary>
             <ul>
               <li>Ensure <strong>VM1 Server</strong> is running (<code>npm start</code>).</li>
-              <li>Verify your VM network interface (e.g. <code>http://192.168.x.x:3000</code>).</li>
-              <li>Check firewall settings on host server port 3000.</li>
+              <li>Verify your VM network interface (e.g. <code>http://10.102.148.12:8080</code>).</li>
+              <li>Check firewall settings on host server port 8080.</li>
             </ul>
           </details>
         </div>
@@ -479,7 +479,7 @@
 
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

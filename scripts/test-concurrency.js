@@ -5,8 +5,8 @@
 
 const http = require('http');
 
-const PORT = 3000;
-const HOST = 'localhost';
+const PORT = Number(process.env.PORT) || 8080;
+const HOST = process.env.HOST || '10.102.148.12';
 
 function makeRequest(path, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {

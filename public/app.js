@@ -19,13 +19,69 @@ document.addEventListener('DOMContentLoaded', () => {
     networkIPs: []
   };
 
-  // Socket.IO Connection
-  const socket = io({
+  // Live connection to the VM1 server (see config.js).
+  // The Node server speaks Socket.IO; the Python server (server/server.py) has no
+  // Socket.IO, so its client script never loads and we fall back to its
+  // Server-Sent Events stream at /api/events, which sends the same events.
+  const SERVER_URL = window.SERVER_URL || '';
+  const socket = typeof window.io === 'function' ? io(SERVER_URL, {
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 3000,
     reconnectionAttempts: Infinity
-  });
+  }) : createEventStreamSocket(SERVER_URL);
+
+  // Minimal Socket.IO look-alike (on / emit / connect) on top of EventSource
+  function createEventStreamSocket(baseUrl) {
+    const lifecycleEvents = ['connect', 'disconnect', 'connect_error'];
+    const handlers = {};
+    let source = null;
+    let connected = false;
+
+    const fire = (event, payload) => (handlers[event] || []).forEach(fn => fn(payload));
+
+    const attach = (event) => {
+      if (lifecycleEvents.includes(event)) return;
+      source.addEventListener(event, (e) => fire(event, JSON.parse(e.data)));
+    };
+
+    const open = () => {
+      source = new EventSource(`${baseUrl}/api/events`);
+      source.onopen = () => {
+        connected = true;
+        fire('connect');
+      };
+      // EventSource retries on its own; only report the first drop as a disconnect
+      source.onerror = () => {
+        if (connected) {
+          connected = false;
+          fire('disconnect', 'server unreachable');
+        } else {
+          fire('connect_error', new Error('Server unreachable'));
+        }
+      };
+      Object.keys(handlers).forEach(attach);
+    };
+
+    open();
+
+    return {
+      on(event, fn) {
+        if (!handlers[event]) {
+          handlers[event] = [];
+          attach(event);
+        }
+        handlers[event].push(fn);
+      },
+      emit() {},
+      connect() {
+        // CLOSED means the server answered with something other than an event
+        // stream (e.g. the Node server was down when the page loaded) — reload
+        // so the right client is picked once the server is back.
+        if (source.readyState === EventSource.CLOSED) window.location.reload();
+      }
+    };
+  }
 
   let retryTimerInterval = null;
   let retrySecondsLeft = 3;
@@ -214,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function fetchNetworkStatus() {
     try {
-      const res = await fetch('/api/status');
+      const res = await fetch(`${SERVER_URL}/api/status`);
       const data = await res.json();
       state.networkIPs = data.networkIPs || [];
       renderNetworkInfo();
@@ -290,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
           btn.disabled = true;
           btn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Joining Queue...`;
 
-          const response = await fetch('/api/queue/join', {
+          const response = await fetch(`${SERVER_URL}/api/queue/join`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ counterId, studentName, studentId, items, notes })
@@ -321,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Are you sure you want to cancel your queue ticket?')) return;
 
         try {
-          await fetch('/api/queue/leave', {
+          await fetch(`${SERVER_URL}/api/queue/leave`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ counterId: state.myTicket.counterId, ticketId: state.myTicket.id })
@@ -490,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function serveNextStudent() {
     try {
-      const res = await fetch('/api/staff/serve-next', {
+      const res = await fetch(`${SERVER_URL}/api/staff/serve-next`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ counterId: state.staffCounterId })
@@ -513,7 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!counter || !counter.servingTicket) return;
 
     try {
-      await fetch('/api/staff/complete', {
+      await fetch(`${SERVER_URL}/api/staff/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ counterId: state.staffCounterId, ticketId: counter.servingTicket.id, action })
@@ -660,7 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
           runBtn.disabled = true;
-          const res = await fetch('/api/test/concurrent-join', {
+          const res = await fetch(`${SERVER_URL}/api/test/concurrent-join`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ counterId, count })
@@ -688,7 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
       resetBtn.addEventListener('click', async () => {
         if (!confirm('Reset all cafeteria queues?')) return;
         try {
-          await fetch('/api/queue/reset', { method: 'POST' });
+          await fetch(`${SERVER_URL}/api/queue/reset`, { method: 'POST' });
           logBench('🔄 Reset all cafeteria queues to initial state.', 'info');
         } catch (e) {
           logBench('Error resetting queues: ' + e.message, 'warn');
@@ -714,13 +770,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!list) return;
 
-    const hostname = window.location.hostname;
-    const port = window.location.port || '3000';
-    const primaryUrl = `http://${hostname}:${port}`;
+    const serverUrl = new URL(SERVER_URL || window.location.origin);
+    const port = serverUrl.port || '8080';
+    const primaryUrl = serverUrl.origin;
 
     let html = `
       <div class="ip-box">
-        <span class="label">Current Browser Host</span>
+        <span class="label">Cafeteria Server</span>
         <code>${primaryUrl}</code>
       </div>
     `;

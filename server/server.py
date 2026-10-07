@@ -37,6 +37,18 @@ PORT = int(os.environ.get("PORT", 8080))
 HOST = "0.0.0.0"  # listen on every network interface so other VMs can connect
 PUBLIC_DIR = (Path(__file__).resolve().parent.parent / "public").resolve()
 
+# Fixed content types: on Windows, mimetypes reads the registry and can report
+# .js/.css as text/plain, which makes browsers ignore the stylesheet.
+CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+}
+
 COUNTER_CONFIG = [
     # id, name, ticket prefix, first ticket number - 1, average prep minutes
     ("hot-meals", "Hot Meals Counter", "HM", 100, 3),
@@ -445,7 +457,8 @@ class Server(BaseHTTPRequestHandler):
         if PUBLIC_DIR not in file_path.parents or not file_path.is_file():
             file_path = PUBLIC_DIR / "index.html"
         content = file_path.read_bytes()
-        content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+        content_type = CONTENT_TYPES.get(file_path.suffix.lower()) \
+            or mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
         self.send_response(200)
         self.send_cors_headers()
         self.send_header("Content-Type", content_type)

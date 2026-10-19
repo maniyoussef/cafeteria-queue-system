@@ -52,16 +52,69 @@ document.addEventListener('DOMContentLoaded', () => {
     authUser: savedUser
   };
 
-  // Load ticket after state exists — loadMyTicket()/getTicketStorageKey() read state.authUser
-  state.myTicket = loadMyTicket();
-
-  // --- Socket.IO ---
-  const socket = io({
+  // Live connection to the VM1 server (see config.js).
+  // The Node server speaks Socket.IO; the Python server (server/server.py) has no
+  // Socket.IO, so its client script never loads and we fall back to its
+  // Server-Sent Events stream at /api/events, which sends the same events.
+  const SERVER_URL = window.SERVER_URL || '';
+  const socket = typeof window.io === 'function' ? io(SERVER_URL, {
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 3000,
     reconnectionAttempts: Infinity
-  });
+  }) : createEventStreamSocket(SERVER_URL);
+
+  // Minimal Socket.IO look-alike (on / emit / connect) on top of EventSource
+  function createEventStreamSocket(baseUrl) {
+    const lifecycleEvents = ['connect', 'disconnect', 'connect_error'];
+    const handlers = {};
+    let source = null;
+    let connected = false;
+
+    const fire = (event, payload) => (handlers[event] || []).forEach(fn => fn(payload));
+
+    const attach = (event) => {
+      if (lifecycleEvents.includes(event)) return;
+      source.addEventListener(event, (e) => fire(event, JSON.parse(e.data)));
+    };
+
+    const open = () => {
+      source = new EventSource(`${baseUrl}/api/events`);
+      source.onopen = () => {
+        connected = true;
+        fire('connect');
+      };
+      // EventSource retries on its own; only report the first drop as a disconnect
+      source.onerror = () => {
+        if (connected) {
+          connected = false;
+          fire('disconnect', 'server unreachable');
+        } else {
+          fire('connect_error', new Error('Server unreachable'));
+        }
+      };
+      Object.keys(handlers).forEach(attach);
+    };
+
+    open();
+
+    return {
+      on(event, fn) {
+        if (!handlers[event]) {
+          handlers[event] = [];
+          attach(event);
+        }
+        handlers[event].push(fn);
+      },
+      emit() {},
+      connect() {
+        // CLOSED means the server answered with something other than an event
+        // stream (e.g. the Node server was down when the page loaded) — reload
+        // so the right client is picked once the server is back.
+        if (source.readyState === EventSource.CLOSED) window.location.reload();
+      }
+    };
+  }
 
   let retryTimerInterval = null;
   let retrySecondsLeft = 3;
@@ -564,7 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function fetchNetworkStatus() {
     try {
-      const res = await fetch('/api/status');
+      const res = await fetch(`${SERVER_URL}/api/status`);
       const data = await res.json();
       state.networkIPs = data.networkIPs || [];
       renderNetworkInfo();
@@ -629,7 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
           btn.innerHTML = `<i data-lucide="loader-2"></i> Joining…`;
           if (window.lucide) window.lucide.createIcons();
 
-          const res = await fetch('/api/queue/join', {
+          const response = await fetch(`${SERVER_URL}/api/queue/join`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ counterId, studentName, studentId, items, notes })
@@ -643,11 +696,28 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Failed to join: ' + (data.error || 'Unknown error'), 'error');
           }
         } catch (err) {
-          showToast('Network error: ' + err.message, 'error');
-        } finally {
-          btn.disabled = false;
-          btn.innerHTML = `<i data-lucide="arrow-right"></i> Join Queue`;
-          if (window.lucide) window.lucide.createIcons();
+          alert('Network connection error: ' + err.message);
+        }
+      });
+    }
+
+    // Cancel Ticket Button
+    const cancelBtn = document.getElementById('btn-cancel-ticket');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', async () => {
+        if (!state.myTicket) return;
+        if (!confirm('Are you sure you want to cancel your queue ticket?')) return;
+
+        try {
+          await fetch(`${SERVER_URL}/api/queue/leave`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ counterId: state.myTicket.counterId, ticketId: state.myTicket.id })
+          });
+          clearMyTicket();
+          renderStudentTracker();
+        } catch (err) {
+          alert('Error cancelling ticket: ' + err.message);
         }
       });
     }
@@ -832,10 +902,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function serveNextStudent() {
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (state.authToken) headers['Authorization'] = `Bearer ${state.authToken}`;
-
-      const res = await fetch('/api/staff/serve-next', {
+      const res = await fetch(`${SERVER_URL}/api/staff/serve-next`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ counterId: state.staffCounterId })
@@ -856,10 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const counter = state.serverQueues.counters[state.staffCounterId];
     if (!counter?.servingTicket) return;
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (state.authToken) headers['Authorization'] = `Bearer ${state.authToken}`;
-
-      const res = await fetch('/api/staff/complete', {
+      await fetch(`${SERVER_URL}/api/staff/complete`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ counterId: state.staffCounterId, ticketId: counter.servingTicket.id, action })
@@ -1024,10 +1088,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // Clock only — do not rebuild counter cards every tick
-  setInterval(() => {
-    if (state.activeTab === 'tv') updateTvClock();
-  }, 1000);
+        try {
+          runBtn.disabled = true;
+          const res = await fetch(`${SERVER_URL}/api/test/concurrent-join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ counterId, count })
+          });
+          const data = await res.json();
+          runBtn.disabled = false;
 
   // Bootstrap queue state via REST so Display works even before Socket.IO delivers
   async function fetchQueueState() {
@@ -1043,30 +1112,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   fetchQueueState();
 
-  // ==========================================================================
-  // VIEW 4: TEST BENCH
-  // ==========================================================================
-  function initTestBenchView() {
-    document.getElementById('btn-run-concurrency-test')?.addEventListener('click', async () => {
-      const counterId = document.getElementById('sim-counter-select').value;
-      const count = parseInt(document.getElementById('sim-count-select').value, 10);
-      const btn = document.getElementById('btn-run-concurrency-test');
-
-      logBench(`Launching ${count} parallel requests to '${counterId}'…`, 'info');
-      try {
-        btn.disabled = true;
-        const res = await fetch('/api/test/concurrent-join', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ counterId, count })
-        });
-        const data = await res.json();
-        btn.disabled = false;
-        if (data.success) {
-          logBench(`${data.processedCount} requests processed in ${data.durationMs}ms`, 'success');
-          data.tickets.forEach(t => logBench(`  ${t.ticketNumber} > #${t.position} ${t.studentName}`, 'success'));
-        } else {
-          logBench(`Failed: ${data.error}`, 'warn');
+    const resetBtn = document.getElementById('btn-reset-queues');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', async () => {
+        if (!confirm('Reset all cafeteria queues?')) return;
+        try {
+          await fetch(`${SERVER_URL}/api/queue/reset`, { method: 'POST' });
+          logBench('🔄 Reset all cafeteria queues to initial state.', 'info');
+        } catch (e) {
+          logBench('Error resetting queues: ' + e.message, 'warn');
         }
       } catch (err) {
         btn.disabled = false;
@@ -1102,11 +1156,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const qrContainer = document.getElementById('qrcode-container');
     if (!list) return;
 
-    const hostname = window.location.hostname;
-    const port = window.location.port || '3000';
-    const primaryUrl = `http://${hostname}:${port}`;
+    const serverUrl = new URL(SERVER_URL || window.location.origin);
+    const port = serverUrl.port || '8080';
+    const primaryUrl = serverUrl.origin;
 
-    let html = `<div class="ip-item"><span class="ip-label">Browser Host</span><code class="ip-value">${primaryUrl}</code></div>`;
+    let html = `
+      <div class="ip-box">
+        <span class="label">Cafeteria Server</span>
+        <code>${primaryUrl}</code>
+      </div>
+    `;
+
     state.networkIPs.forEach(ip => {
       html += `<div class="ip-item"><span class="ip-label">${ip.interface}</span><code class="ip-value">http://${ip.address}:${port}</code></div>`;
     });

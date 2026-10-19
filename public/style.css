@@ -1309,7 +1309,8 @@ code, .log-console, .ip-value {
   overflow-y: auto;
   padding: 0;
 }
-.queue-item {
+.queue-item,
+.queue-item-card {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
@@ -1317,10 +1318,12 @@ code, .log-console, .ip-value {
   border-bottom: 1px solid var(--line);
   transition: background-color var(--duration) var(--ease);
 }
-.queue-item:last-child { border-bottom: none; }
+.queue-item:last-child,
+.queue-item-card:last-child { border-bottom: none; }
 
 /* First item = next in line */
-.queue-item:first-child {
+.queue-item:first-child,
+.queue-item-card:first-child {
   background: var(--sand);
   border-left: 3px solid var(--ink);
 }

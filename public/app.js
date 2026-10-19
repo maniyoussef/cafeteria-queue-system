@@ -45,12 +45,15 @@ document.addEventListener('DOMContentLoaded', () => {
     soundEnabled: true,
     activeTab: initialTab,
     staffCounterId: 'hot-meals',
-    myTicket: loadMyTicket(),
+    myTicket: null,
     serverQueues: null,
     networkIPs: [],
     authToken: localStorage.getItem('campusbite_auth_token') || null,
     authUser: savedUser
   };
+
+  // Load ticket after state exists — loadMyTicket()/getTicketStorageKey() read state.authUser
+  state.myTicket = loadMyTicket();
 
   // --- Socket.IO ---
   const socket = io({
@@ -289,6 +292,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const roleTag = document.getElementById('user-role-tag');
     const authActionBtn = document.getElementById('btn-header-auth-action');
     const roleIcon = document.getElementById('user-role-icon');
+    const headerStats = document.getElementById('header-stats');
+    const sidebar = document.getElementById('sidebar');
 
     if (pill && nameEl && roleTag && authActionBtn) {
       pill.style.display = 'inline-flex';
@@ -296,10 +301,14 @@ document.addEventListener('DOMContentLoaded', () => {
       roleTag.textContent = user.role === 'staff' ? 'Staff Server' : 'Client';
       roleTag.className = `user-role-tag ${user.role}`;
       authActionBtn.textContent = 'Sign Out';
+      authActionBtn.style.display = 'inline-flex';
       if (roleIcon) {
         roleIcon.setAttribute('data-lucide', user.role === 'staff' ? 'chef-hat' : 'user');
       }
     }
+
+    if (headerStats) headerStats.style.display = 'flex';
+    if (sidebar) sidebar.style.display = 'flex';
 
     // Role-based navigation tab isolation
     const tabAuth = document.getElementById('tab-auth');
@@ -352,11 +361,15 @@ document.addEventListener('DOMContentLoaded', () => {
   function applyLoggedOutState() {
     const pill = document.getElementById('user-profile-pill');
     const authActionBtn = document.getElementById('btn-header-auth-action');
+    const headerStats = document.getElementById('header-stats');
+    const sidebar = document.getElementById('sidebar');
+
     if (pill) pill.style.display = 'none';
-    if (authActionBtn) authActionBtn.textContent = 'Sign In';
+    if (authActionBtn) authActionBtn.style.display = 'none';
+    if (headerStats) headerStats.style.display = 'none';
+    if (sidebar) sidebar.style.display = 'none';
 
     state.myTicket = loadMyTicket();
-    renderStudentTracker();
 
     const tabAuth = document.getElementById('tab-auth');
     const tabStudent = document.getElementById('tab-student');
@@ -364,11 +377,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabTv = document.getElementById('tab-tv');
     const tabBench = document.getElementById('tab-testbench');
 
-    if (tabAuth) tabAuth.style.display = 'inline-flex';
-    if (tabStudent) tabStudent.style.display = 'inline-flex';
-    if (tabStaff) tabStaff.style.display = 'inline-flex';
-    if (tabTv) tabTv.style.display = 'inline-flex';
-    if (tabBench) tabBench.style.display = 'inline-flex';
+    if (tabAuth) tabAuth.style.display = 'none';
+    if (tabStudent) tabStudent.style.display = 'none';
+    if (tabStaff) tabStaff.style.display = 'none';
+    if (tabTv) tabTv.style.display = 'none';
+    if (tabBench) tabBench.style.display = 'none';
 
     const authHint = document.getElementById('student-auth-hint');
     if (authHint) authHint.style.display = 'none';
@@ -415,6 +428,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function switchTab(tab) {
+    // Guests may only see the login screen
+    if (!state.authUser) {
+      tab = 'auth';
+    } else if (state.authUser.role === 'student') {
+      if (tab === 'staff' || tab === 'testbench' || tab === 'auth') tab = 'student';
+    } else if (state.authUser.role === 'staff') {
+      if (tab === 'student' || tab === 'auth') tab = 'staff';
+    }
+
     document.querySelectorAll('.sidebar-link, .nav-btn').forEach(b => {
       b.classList.remove('active');
       b.setAttribute('aria-selected', 'false');
@@ -664,15 +686,31 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderStudentTracker() {
     const joinCard = document.getElementById('student-join-card');
     const trackerCard = document.getElementById('student-tracker-card');
-
-    if (!state.myTicket) {
-      if (joinCard) joinCard.style.display = 'block';
-      if (trackerCard) trackerCard.style.display = 'none';
-      return;
-    }
+    const emptyState = document.getElementById('ticket-empty-state');
+    const activeDisplay = document.getElementById('ticket-active-display');
+    const liveBadge = document.getElementById('ticket-live-badge');
+    const panelDesc = document.getElementById('ticket-panel-desc');
 
     if (joinCard) joinCard.style.display = 'block';
     if (trackerCard) trackerCard.style.display = 'block';
+
+    // Empty state: client has not joined a queue yet
+    if (!state.myTicket) {
+      if (emptyState) emptyState.style.display = 'flex';
+      if (activeDisplay) activeDisplay.style.display = 'none';
+      if (liveBadge) liveBadge.style.display = 'none';
+      if (panelDesc) {
+        panelDesc.style.display = 'block';
+        panelDesc.textContent = 'Your live ticket will appear here once you join a counter.';
+      }
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+
+    if (emptyState) emptyState.style.display = 'none';
+    if (activeDisplay) activeDisplay.style.display = 'block';
+    if (liveBadge) liveBadge.style.display = 'inline-flex';
+    if (panelDesc) panelDesc.style.display = 'none';
 
     const t = state.myTicket;
     document.getElementById('ticket-counter-name').textContent = t.counterName || 'Cafeteria Counter';
@@ -891,36 +929,119 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
   // VIEW 3: TV DISPLAY
   // ==========================================================================
-  function renderTVDisplay() {
-    if (!state.serverQueues) return;
+  let lastTvBoardSignature = null;
+
+  const TV_COUNTER_META = {
+    'hot-meals': { icon: 'flame', short: 'Hot Meals' },
+    'snacks-drinks': { icon: 'coffee', short: 'Snacks & Drinks' },
+    'express-deli': { icon: 'zap', short: 'Express Deli' }
+  };
+
+  function updateTvClock() {
     const clockEl = document.getElementById('tv-clock-display');
     if (clockEl) clockEl.textContent = new Date().toLocaleTimeString();
+  }
+
+  function getTvBoardSignature(queues) {
+    if (!queues?.counters) return '';
+    return Object.values(queues.counters).map(c => {
+      const serving = c.servingTicket;
+      const next = (c.activeQueue || []).slice(0, 5).map(t => t.ticketNumber).join(',');
+      return `${c.id}:${serving?.ticketNumber || ''}:${serving?.studentName || ''}:${c.activeQueue?.length || 0}:${next}`;
+    }).join('|');
+  }
+
+  function buildTvCounterCard(counter) {
+    const meta = TV_COUNTER_META[counter.id] || { icon: 'utensils', short: counter.name };
+    const serving = counter.servingTicket;
+    const queue = counter.activeQueue || [];
+    const next = queue.slice(0, 5);
+    const isActive = Boolean(serving);
+
+    return `
+      <article class="tv-counter-card${isActive ? ' is-serving' : ''}" data-counter="${counter.id}">
+        <header class="tv-counter-header">
+          <div class="tv-counter-icon" aria-hidden="true">
+            <i data-lucide="${meta.icon}"></i>
+          </div>
+          <div class="tv-counter-heading">
+            <span class="tv-counter-title">${meta.short}</span>
+            <span class="tv-counter-subtitle">${counter.name}</span>
+          </div>
+          <span class="tv-queue-count" title="Waiting in line">${queue.length}</span>
+        </header>
+
+        <div class="tv-now-serving-box">
+          <div class="tv-serving-label">
+            <i data-lucide="bell"></i>
+            Now Serving
+          </div>
+          <div class="tv-serving-num${serving ? '' : ' is-idle'}">${serving ? serving.ticketNumber : 'NONE'}</div>
+          <div class="tv-serving-name${serving ? '' : ' is-idle'}">${serving ? serving.studentName : 'Counter is free'}</div>
+        </div>
+
+        <div class="tv-up-next-list">
+          <h4>
+            <i data-lucide="list-ordered"></i>
+            Up Next
+            <span class="tv-up-next-count">${queue.length}</span>
+          </h4>
+          <div class="tv-next-chips">
+            ${next.length
+              ? next.map(t => `<span class="tv-next-chip">${t.ticketNumber}</span>`).join('')
+              : '<span class="tv-next-empty">No tickets waiting</span>'}
+          </div>
+        </div>
+      </article>`;
+  }
+
+  function renderTVDisplay(force = false) {
+    updateTvClock();
 
     const grid = document.getElementById('tv-counters-grid');
     if (!grid) return;
 
-    grid.innerHTML = Object.values(state.serverQueues.counters).map(counter => {
-      const serving = counter.servingTicket;
-      const next = counter.activeQueue.slice(0, 5);
-      return `
-        <div class="tv-counter-card">
-          <div class="tv-counter-title">${counter.name}</div>
-          <div class="tv-now-serving-box">
-            <div class="tv-serving-label">Now Serving</div>
-            <div class="tv-serving-num">${serving ? serving.ticketNumber : '—'}</div>
-            <div class="tv-serving-name">${serving ? serving.studentName : 'Please wait'}</div>
-          </div>
-          <div class="tv-up-next-list">
-            <h4>Up Next (${counter.activeQueue.length})</h4>
-            <div class="tv-next-chips">
-              ${next.length ? next.map(t => `<span class="tv-next-chip">${t.ticketNumber}</span>`).join('') : '<span style="color:var(--ink-muted);font-size:0.875rem;font-style:italic;">Empty</span>'}
-            </div>
-          </div>
-        </div>`;
-    }).join('');
+    // No queue state yet — show idle placeholders so the board is never blank
+    if (!state.serverQueues?.counters) {
+      if (grid.childElementCount === 0) {
+        const placeholders = [
+          { id: 'hot-meals', name: 'Hot Meals Counter', activeQueue: [], servingTicket: null },
+          { id: 'snacks-drinks', name: 'Snacks & Drinks Counter', activeQueue: [], servingTicket: null },
+          { id: 'express-deli', name: 'Express Deli & Salad Bar', activeQueue: [], servingTicket: null }
+        ];
+        grid.innerHTML = placeholders.map(buildTvCounterCard).join('');
+        if (window.lucide) window.lucide.createIcons();
+      }
+      return;
+    }
+
+    const signature = getTvBoardSignature(state.serverQueues);
+    // Avoid rebuilding the grid every second (that re-triggered fade-out and looked empty)
+    if (!force && signature === lastTvBoardSignature && grid.childElementCount > 0) return;
+    lastTvBoardSignature = signature;
+
+    grid.innerHTML = Object.values(state.serverQueues.counters).map(buildTvCounterCard).join('');
+    if (window.lucide) window.lucide.createIcons();
   }
 
-  setInterval(() => { if (state.activeTab === 'tv') renderTVDisplay(); }, 1000);
+  // Clock only — do not rebuild counter cards every tick
+  setInterval(() => {
+    if (state.activeTab === 'tv') updateTvClock();
+  }, 1000);
+
+  // Bootstrap queue state via REST so Display works even before Socket.IO delivers
+  async function fetchQueueState() {
+    try {
+      const res = await fetch('/api/queues');
+      const data = await res.json();
+      if (data?.counters) {
+        state.serverQueues = data;
+        if (state.activeTab === 'tv') renderTVDisplay(true);
+        else renderAllViews();
+      }
+    } catch (e) { /* socket will retry */ }
+  }
+  fetchQueueState();
 
   // ==========================================================================
   // VIEW 4: TEST BENCH

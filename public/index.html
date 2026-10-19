@@ -22,38 +22,40 @@
         <p class="page-subtitle" id="network-status-text">Connecting to server&hellip;</p>
       </div>
 
-      <!-- Navigation (repurposed from sidebar) -->
-      <nav class="sidebar-nav nav-tabs" id="sidebar" role="tablist" aria-label="Main navigation">
-        <button class="sidebar-link nav-btn active" data-tab="auth" id="tab-auth" role="tab" aria-selected="true" aria-controls="view-auth">
+      <!-- Navigation — hidden until authenticated -->
+      <nav class="sidebar-nav nav-tabs" id="sidebar" role="tablist" aria-label="Main navigation" style="display: none;">
+        <button class="sidebar-link nav-btn" data-tab="auth" id="tab-auth" role="tab" aria-selected="false" aria-controls="view-auth" style="display: none;">
           <i data-lucide="key-round"></i>
           <span>Sign In</span>
         </button>
-        <button class="sidebar-link nav-btn" data-tab="student" id="tab-student" role="tab" aria-selected="false" aria-controls="view-student">
+        <button class="sidebar-link nav-btn" data-tab="student" id="tab-student" role="tab" aria-selected="false" aria-controls="view-student" style="display: none;">
           <i data-lucide="user"></i>
           <span>Student Client <small class="tab-hint">(VM2/4)</small></span>
         </button>
-        <button class="sidebar-link nav-btn" data-tab="staff" id="tab-staff" role="tab" aria-selected="false" aria-controls="view-staff">
+        <button class="sidebar-link nav-btn" data-tab="staff" id="tab-staff" role="tab" aria-selected="false" aria-controls="view-staff" style="display: none;">
           <i data-lucide="layout-dashboard"></i>
           <span>Staff Backoffice <small class="tab-hint">(VM3)</small></span>
         </button>
-        <button class="sidebar-link nav-btn" data-tab="tv" id="tab-tv" role="tab" aria-selected="false" aria-controls="view-tv">
+        <button class="sidebar-link nav-btn" data-tab="tv" id="tab-tv" role="tab" aria-selected="false" aria-controls="view-tv" style="display: none;">
           <i data-lucide="monitor"></i>
           <span>Display</span>
         </button>
-        <button class="sidebar-link nav-btn" data-tab="testbench" id="tab-testbench" role="tab" aria-selected="false" aria-controls="view-testbench">
+        <button class="sidebar-link nav-btn" data-tab="testbench" id="tab-testbench" role="tab" aria-selected="false" aria-controls="view-testbench" style="display: none;">
           <i data-lucide="terminal"></i>
           <span>Bench</span>
         </button>
       </nav>
 
       <div class="page-header-right">
-        <div class="header-stat">
-          <span class="header-stat-label">Waiting</span>
-          <span class="header-stat-value" id="header-total-waiting">0</span>
-        </div>
-        <div class="header-stat">
-          <span class="header-stat-label">Served</span>
-          <span class="header-stat-value" id="header-total-served">0</span>
+        <div class="header-stats" id="header-stats" style="display: none;">
+          <div class="header-stat">
+            <span class="header-stat-label">Waiting</span>
+            <span class="header-stat-value" id="header-total-waiting">0</span>
+          </div>
+          <div class="header-stat">
+            <span class="header-stat-label">Served</span>
+            <span class="header-stat-value" id="header-total-served">0</span>
+          </div>
         </div>
         <div class="header-auth-box">
           <div class="user-pill" id="user-profile-pill" style="display: none;">
@@ -61,7 +63,7 @@
             <span class="user-pill-text" id="user-display-name">Guest</span>
             <span class="user-role-tag" id="user-role-tag">Client</span>
           </div>
-          <button type="button" class="btn btn-sm btn-ghost" id="btn-header-auth-action">Sign In</button>
+          <button type="button" class="btn btn-sm btn-ghost" id="btn-header-auth-action" style="display: none;">Sign Out</button>
         </div>
       </div>
     </header>
@@ -221,11 +223,6 @@
         <section id="view-student" class="view-panel" role="tabpanel" aria-labelledby="tab-student">
           <div class="student-layout">
 
-            <!-- Optional Cutler-style hero placeholder: Replace with cafeteria dining room photography -->
-            <figure class="hero-image" aria-hidden="true">
-              <!-- <img src="cafeteria.jpg" alt="Cafeteria Dining Room"> -->
-            </figure>
-
             <!-- Join Queue Card -->
             <div class="card" id="student-join-card">
               <div class="card-header">
@@ -319,12 +316,13 @@
               </form>
             </div>
 
-            <!-- Active Ticket Tracker -->
-            <div class="card card-accent" id="student-tracker-card" style="display: none;">
+            <!-- Ticket Tracker (always beside Join Queue) -->
+            <div class="card card-accent" id="student-tracker-card">
               <div class="card-header card-header-split">
                 <div class="card-title-group">
-                  <div class="live-badge" aria-live="polite"><span class="live-dot"></span> Live Tracker</div>
+                  <div class="live-badge" id="ticket-live-badge" style="display: none;" aria-live="polite"><span class="live-dot"></span> Live Tracker</div>
                   <h2 class="card-title">Your Ticket</h2>
+                  <p class="card-desc" id="ticket-panel-desc">Your live ticket will appear here once you join a counter.</p>
                 </div>
                 <button class="btn btn-ghost btn-sm" id="btn-sound-toggle">
                   <i data-lucide="volume-2" id="sound-icon"></i>
@@ -332,7 +330,17 @@
                 </button>
               </div>
 
-              <div class="ticket-display">
+              <!-- Empty state: client has not joined yet -->
+              <div class="ticket-empty-state" id="ticket-empty-state">
+                <div class="empty-state">
+                  <i data-lucide="ticket"></i>
+                  <p>No active ticket</p>
+                  <span class="empty-state-hint">Use Join the Queue to receive your number and live position.</span>
+                </div>
+              </div>
+
+              <!-- Active ticket details -->
+              <div class="ticket-display" id="ticket-active-display" style="display: none;">
                 <div class="ticket-header-tag" id="ticket-counter-name">Hot Meals Counter</div>
                 <div class="ticket-number" id="ticket-number-display" aria-live="polite">HM-101</div>
 
@@ -510,10 +518,13 @@
 
         <!-- ===== VIEW 3: TV DISPLAY ===== -->
         <section id="view-tv" class="view-panel" role="tabpanel" aria-labelledby="tab-tv">
-          <div class="tv-board" data-theme="inverse">
+          <div class="tv-board">
             <div class="tv-top-bar">
               <div class="tv-logo"><i data-lucide="utensils"></i> CampusBite</div>
-              <div class="tv-clock" id="tv-clock-display" aria-live="off">12:00:00 PM</div>
+              <div class="tv-top-meta">
+                <span class="tv-live-pill" aria-live="polite"><span class="live-dot"></span> Live Board</span>
+                <div class="tv-clock" id="tv-clock-display" aria-live="off">12:00:00 PM</div>
+              </div>
             </div>
             <div class="tv-grid" id="tv-counters-grid"></div>
           </div>

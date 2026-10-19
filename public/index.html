@@ -24,13 +24,17 @@
 
       <!-- Navigation (repurposed from sidebar) -->
       <nav class="sidebar-nav nav-tabs" id="sidebar" role="tablist" aria-label="Main navigation">
-        <button class="sidebar-link nav-btn active" data-tab="student" id="tab-student" role="tab" aria-selected="true" aria-controls="view-student">
+        <button class="sidebar-link nav-btn active" data-tab="auth" id="tab-auth" role="tab" aria-selected="true" aria-controls="view-auth">
+          <i data-lucide="key-round"></i>
+          <span>Sign In</span>
+        </button>
+        <button class="sidebar-link nav-btn" data-tab="student" id="tab-student" role="tab" aria-selected="false" aria-controls="view-student">
           <i data-lucide="user"></i>
-          <span>Student <small class="tab-hint">(VM2/4)</small></span>
+          <span>Student Client <small class="tab-hint">(VM2/4)</small></span>
         </button>
         <button class="sidebar-link nav-btn" data-tab="staff" id="tab-staff" role="tab" aria-selected="false" aria-controls="view-staff">
           <i data-lucide="layout-dashboard"></i>
-          <span>Staff <small class="tab-hint">(VM3)</small></span>
+          <span>Staff Backoffice <small class="tab-hint">(VM3)</small></span>
         </button>
         <button class="sidebar-link nav-btn" data-tab="tv" id="tab-tv" role="tab" aria-selected="false" aria-controls="view-tv">
           <i data-lucide="monitor"></i>
@@ -50,6 +54,14 @@
         <div class="header-stat">
           <span class="header-stat-label">Served</span>
           <span class="header-stat-value" id="header-total-served">0</span>
+        </div>
+        <div class="header-auth-box">
+          <div class="user-pill" id="user-profile-pill" style="display: none;">
+            <i data-lucide="user" id="user-role-icon"></i>
+            <span class="user-pill-text" id="user-display-name">Guest</span>
+            <span class="user-role-tag" id="user-role-tag">Client</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-ghost" id="btn-header-auth-action">Sign In</button>
         </div>
       </div>
     </header>
@@ -76,8 +88,137 @@
     <div class="main-wrapper">
       <main class="main-content">
 
+        <!-- ===== VIEW 0: AUTHENTICATION SERVICE & BACKOFFICE SELECTOR ===== -->
+        <section id="view-auth" class="view-panel active" role="tabpanel" aria-labelledby="tab-auth">
+          <div class="auth-layout">
+            
+            <div class="auth-header">
+              <span class="auth-tag">Authentication Service</span>
+              <h2 class="auth-title">Access Your Backoffice</h2>
+              <p class="auth-subtitle">Select a pre-configured profile below for instantaneous one-click sign in, or enter your credentials manually.</p>
+            </div>
+
+            <!-- Pre-configured Credentials Showcase / Quick Selector -->
+            <div class="credentials-showcase">
+              <div class="credentials-group-header">
+                <span class="credentials-group-title">Static Profiles (3 Clients &amp; 1 Staff Server)</span>
+              </div>
+              <div class="credentials-cards-grid" id="credentials-cards-grid">
+                
+                <!-- Client 1 -->
+                <div class="credential-card" data-username="alice" data-password="student123!" data-role="student">
+                  <div class="credential-card-top">
+                    <span class="credential-role-badge">Client 1 (Student)</span>
+                    <i data-lucide="user"></i>
+                  </div>
+                  <h3 class="credential-name">Alice Walker</h3>
+                  <div class="credential-details">
+                    <span class="credential-id">Student ID: <strong>STU-9021</strong></span>
+                    <span class="credential-user">User: <code>alice</code></span>
+                    <span class="credential-pass">Pass: <code>student123!</code></span>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline btn-block credential-quick-btn">
+                    Select Profile
+                  </button>
+                </div>
+
+                <!-- Client 2 -->
+                <div class="credential-card" data-username="bob" data-password="student123!" data-role="student">
+                  <div class="credential-card-top">
+                    <span class="credential-role-badge">Client 2 (Student)</span>
+                    <i data-lucide="user"></i>
+                  </div>
+                  <h3 class="credential-name">Bob Chen</h3>
+                  <div class="credential-details">
+                    <span class="credential-id">Student ID: <strong>STU-4418</strong></span>
+                    <span class="credential-user">User: <code>bob</code></span>
+                    <span class="credential-pass">Pass: <code>student123!</code></span>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline btn-block credential-quick-btn">
+                    Select Profile
+                  </button>
+                </div>
+
+                <!-- Client 3 -->
+                <div class="credential-card" data-username="charlie" data-password="student123!" data-role="student">
+                  <div class="credential-card-top">
+                    <span class="credential-role-badge">Client 3 (Student)</span>
+                    <i data-lucide="user"></i>
+                  </div>
+                  <h3 class="credential-name">Charlie Davis</h3>
+                  <div class="credential-details">
+                    <span class="credential-id">Student ID: <strong>STU-7729</strong></span>
+                    <span class="credential-user">User: <code>charlie</code></span>
+                    <span class="credential-pass">Pass: <code>student123!</code></span>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline btn-block credential-quick-btn">
+                    Select Profile
+                  </button>
+                </div>
+
+                <!-- Staff 1 -->
+                <div class="credential-card credential-card-staff" data-username="staff" data-password="staff123!" data-role="staff">
+                  <div class="credential-card-top">
+                    <span class="credential-role-badge staff-badge">Staff Server Backoffice</span>
+                    <i data-lucide="chef-hat"></i>
+                  </div>
+                  <h3 class="credential-name">Chef Marcus</h3>
+                  <div class="credential-details">
+                    <span class="credential-id">Staff ID: <strong>STF-101</strong></span>
+                    <span class="credential-user">User: <code>staff</code></span>
+                    <span class="credential-pass">Pass: <code>staff123!</code></span>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-primary btn-block credential-quick-btn">
+                    Access Staff Server
+                  </button>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Direct Sign-in Form Card -->
+            <div class="card auth-card">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <h2 class="card-title">Direct Sign In</h2>
+                  <p class="card-desc">Enter your username or campus email address and password.</p>
+                </div>
+              </div>
+
+              <form id="auth-login-form" class="form-body">
+                <div class="alert-box alert-error" id="auth-error-alert" style="display: none;" role="alert">
+                  <i data-lucide="alert-circle"></i>
+                  <span id="auth-error-text">Invalid credentials.</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="auth-username">Username or Campus Email <span class="required">*</span></label>
+                  <div class="input-wrapper">
+                    <input type="text" id="auth-username" class="form-control" placeholder="e.g. alice or student1@campusbite.edu" autocomplete="username" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="auth-password">Password <span class="required">*</span></label>
+                  <div class="input-wrapper">
+                    <input type="password" id="auth-password" class="form-control" placeholder="••••••••" autocomplete="current-password" required>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-auth-submit">
+                    <i data-lucide="log-in"></i>
+                    <span>Authenticate &amp; Enter</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+          </div>
+        </section>
+
         <!-- ===== VIEW 1: STUDENT PORTAL ===== -->
-        <section id="view-student" class="view-panel active" role="tabpanel" aria-labelledby="tab-student">
+        <section id="view-student" class="view-panel" role="tabpanel" aria-labelledby="tab-student">
           <div class="student-layout">
 
             <!-- Optional Cutler-style hero placeholder: Replace with cafeteria dining room photography -->
@@ -91,6 +232,10 @@
                 <div class="card-title-group">
                   <h2 class="card-title">Join the Queue</h2>
                   <p class="card-desc">Choose your counter and take a seat. We will call your number shortly.</p>
+                </div>
+                <div id="student-auth-hint" class="auth-context-hint" style="display: none;">
+                  <i data-lucide="shield-check"></i>
+                  <span>Authenticated Client: <strong id="student-logged-name">Alice Walker</strong> (<code id="student-logged-id">STU-9021</code>)</span>
                 </div>
               </div>
 

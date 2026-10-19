@@ -1984,3 +1984,225 @@ button, a, input, select, textarea, .chip, .counter-option {
 input[type="radio"] {
   min-height: auto;
 }
+
+/* ==========================================================================
+   24. AUTHENTICATION SERVICE & BACKOFFICE SEPARATION
+   ========================================================================== */
+
+/* Header User Pill & Auth Action Button */
+.header-auth-box {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--line);
+}
+
+.user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--sand);
+  border: 1px solid var(--ink);
+  padding: 4px 10px;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+}
+.user-pill i { width: 14px; height: 14px; stroke-width: 1.5; flex-shrink: 0; }
+.user-pill-text {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.user-role-tag {
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 2px 6px;
+  margin-left: 4px;
+}
+
+/* Auth View Layout */
+.auth-layout {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.auth-header {
+  text-align: center;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.auth-tag {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-muted);
+  margin-bottom: var(--sp-2);
+}
+.auth-title {
+  font-size: clamp(2rem, 3.5vw, 2.75rem);
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--ink);
+  margin-bottom: var(--sp-2);
+}
+.auth-subtitle {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--ink-muted);
+  line-height: 1.6;
+}
+
+/* Credentials Showcase */
+.credentials-showcase {
+  background: var(--sand);
+  border: 1px solid var(--ink);
+  padding: var(--sp-5) var(--sp-5);
+}
+.credentials-group-header {
+  margin-bottom: var(--sp-4);
+  text-align: center;
+}
+.credentials-group-title {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+
+.credentials-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-4);
+}
+@media (max-width: 960px) {
+  .credentials-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .credentials-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.credential-card {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background-color var(--duration) var(--ease);
+}
+.credential-card:hover {
+  background: var(--sand-deep);
+}
+.credential-card.credential-card-staff {
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+}
+.credential-card.credential-card-staff .credential-name,
+.credential-card.credential-card-staff .credential-details span {
+  color: var(--paper);
+}
+.credential-card.credential-card-staff code {
+  color: var(--sand);
+  background: rgba(246,245,238,0.14);
+}
+.credential-card.credential-card-staff:hover {
+  background: #1a1a1a;
+}
+
+.credential-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.credential-card-top i {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.5;
+}
+.credential-role-badge {
+  font-family: var(--font-body);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-muted);
+}
+.credential-card-staff .credential-role-badge {
+  color: var(--sand);
+}
+
+.credential-name {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: var(--sp-2);
+}
+.credential-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  margin-bottom: var(--sp-4);
+}
+.credential-details code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 1px 4px;
+  background: rgba(0,0,0,0.06);
+  border: 1px solid var(--line);
+}
+
+/* Direct Sign In Form Card */
+.auth-card {
+  max-width: 540px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Authenticated Context Hint in Student Form */
+.auth-context-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+.auth-context-hint i {
+  width: 16px;
+  height: 16px;
+  color: var(--ink);
+  stroke-width: 1.5;
+}
+.auth-context-hint code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 1px 4px;
+  background: var(--sand);
+  border: 1px solid var(--line);
+}
+

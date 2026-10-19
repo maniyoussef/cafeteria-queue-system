@@ -5,6 +5,7 @@ const cors = require('cors');
 const os = require('os');
 const path = require('path');
 const queueManager = require('./queueManager');
+const authService = require('./authService');
 
 const app = express();
 const server = http.createServer(app);
@@ -57,6 +58,52 @@ io.on('connection', (socket) => {
 });
 
 // REST API Endpoints
+
+// ============================================================================
+// AUTHENTICATION & ROLE-BASED ACCESS
+// ============================================================================
+
+// Auth Middleware: Optional or Role Verification
+function verifyAuthToken(req) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : (req.query?.token || req.headers['x-auth-token']);
+  if (!token) return null;
+  return authService.getUserByToken(token);
+}
+
+// 0.1 Login Endpoint
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const result = authService.login(username, password);
+    res.json(result);
+  } catch (err) {
+    res.status(401).json({ success: false, error: err.message });
+  }
+});
+
+// 0.2 Get Current Session User
+app.get('/api/auth/me', (req, res) => {
+  const user = verifyAuthToken(req);
+  if (user) {
+    res.json({ success: true, user });
+  } else {
+    res.status(401).json({ success: false, error: 'Unauthorized or expired session.' });
+  }
+});
+
+// 0.3 Logout Endpoint
+app.post('/api/auth/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.token;
+  authService.logout(token);
+  res.json({ success: true, message: 'Logged out successfully.' });
+});
+
+// 0.4 Demo Credentials Directory
+app.get('/api/auth/credentials', (req, res) => {
+  res.json({ success: true, credentials: authService.getDemoCredentials() });
+});
 
 // 1. Get system status & network IP addresses
 app.get('/api/status', (req, res) => {
@@ -114,6 +161,11 @@ app.post('/api/queue/leave', async (req, res) => {
 // 5. Staff Serves Next Student (Pop FIFO Head)
 app.post('/api/staff/serve-next', async (req, res) => {
   try {
+    const user = verifyAuthToken(req);
+    if (user && user.role !== 'staff') {
+      return res.status(403).json({ success: false, error: 'Access denied: Staff backoffice role required.' });
+    }
+
     const { counterId } = req.body;
     const result = await queueManager.serveNext(counterId);
 
@@ -132,6 +184,11 @@ app.post('/api/staff/serve-next', async (req, res) => {
 // 6. Staff Completes / Marks No-Show
 app.post('/api/staff/complete', async (req, res) => {
   try {
+    const user = verifyAuthToken(req);
+    if (user && user.role !== 'staff') {
+      return res.status(403).json({ success: false, error: 'Access denied: Staff backoffice role required.' });
+    }
+
     const { counterId, ticketId, action } = req.body;
     const result = await queueManager.completeTicket(counterId, ticketId, action);
 

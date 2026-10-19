@@ -6,14 +6,27 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) window.lucide.createIcons();
 
   // --- Application State ---
+  const pageTitles = {
+    auth: 'CampusBite',
+    student: 'CampusBite',
+    staff: 'CampusBite',
+    tv: 'CampusBite',
+    testbench: 'CampusBite'
+  };
+
+  const savedUser = JSON.parse(localStorage.getItem('campusbite_auth_user') || 'null');
+  const initialTab = savedUser ? (savedUser.role === 'staff' ? 'staff' : 'student') : 'auth';
+
   const state = {
     connected: false,
     soundEnabled: true,
-    activeTab: 'student',
+    activeTab: initialTab,
     staffCounterId: 'hot-meals',
     myTicket: JSON.parse(localStorage.getItem('myCafeteriaTicket') || 'null'),
     serverQueues: null,
-    networkIPs: []
+    networkIPs: [],
+    authToken: localStorage.getItem('campusbite_auth_token') || null,
+    authUser: savedUser
   };
 
   // --- Socket.IO ---
@@ -64,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Init ---
   fetchNetworkStatus();
+  initAuthService();
   initNavigation();
   initStudentView();
   initStaffView();
@@ -71,16 +85,231 @@ document.addEventListener('DOMContentLoaded', () => {
   initModals();
   initOfflineOverlay();
 
+  // Set initial active tab
+  switchTab(state.activeTab);
+
+  // ==========================================================================
+  // AUTHENTICATION & ROLE-BASED ACCESS CONTROL
+  // ==========================================================================
+  function initAuthService() {
+    // 1. Hook Direct Login Form
+    const authForm = document.getElementById('auth-login-form');
+    if (authForm) {
+      authForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('auth-username').value.trim();
+        const password = document.getElementById('auth-password').value;
+        await handleLogin(username, password);
+      });
+    }
+
+    // 2. Hook Header Auth Action Button (Sign In / Sign Out)
+    const headerAuthBtn = document.getElementById('btn-header-auth-action');
+    if (headerAuthBtn) {
+      headerAuthBtn.addEventListener('click', () => {
+        if (state.authUser) {
+          handleLogout();
+        } else {
+          switchTab('auth');
+        }
+      });
+    }
+
+    // 3. Hook Quick-login Profile Cards
+    document.querySelectorAll('.credential-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const username = card.dataset.username;
+        const password = card.dataset.password;
+        if (username && password) {
+          document.getElementById('auth-username').value = username;
+          document.getElementById('auth-password').value = password;
+          handleLogin(username, password);
+        }
+      });
+    });
+
+    // 4. Validate or Restore Session
+    if (state.authToken) {
+      fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${state.authToken}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.user) {
+          state.authUser = data.user;
+          localStorage.setItem('campusbite_auth_user', JSON.stringify(data.user));
+          applyUserSession(data.user);
+        } else {
+          handleLogout(false);
+        }
+      })
+      .catch(() => {
+        if (state.authUser) applyUserSession(state.authUser);
+      });
+    } else {
+      applyLoggedOutState();
+    }
+  }
+
+  async function handleLogin(username, password) {
+    const errorAlert = document.getElementById('auth-error-alert');
+    const errorText = document.getElementById('auth-error-text');
+    const submitBtn = document.getElementById('btn-auth-submit');
+
+    if (errorAlert) errorAlert.style.display = 'none';
+    if (submitBtn) submitBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (submitBtn) submitBtn.disabled = false;
+
+      if (data.success && data.token) {
+        state.authToken = data.token;
+        state.authUser = data.user;
+        localStorage.setItem('campusbite_auth_token', data.token);
+        localStorage.setItem('campusbite_auth_user', JSON.stringify(data.user));
+
+        showToast(`Welcome, ${data.user.name}`, 'success');
+        applyUserSession(data.user);
+
+        // Direct to designated backoffice
+        if (data.user.role === 'staff') {
+          switchTab('staff');
+        } else {
+          switchTab('student');
+        }
+      } else {
+        if (errorAlert && errorText) {
+          errorText.textContent = data.error || 'Invalid credentials. Please verify username and password.';
+          errorAlert.style.display = 'flex';
+          if (window.lucide) window.lucide.createIcons();
+        }
+      }
+    } catch (err) {
+      if (submitBtn) submitBtn.disabled = false;
+      if (errorAlert && errorText) {
+        errorText.textContent = 'Network error contacting authentication service.';
+        errorAlert.style.display = 'flex';
+      }
+    }
+  }
+
+  function handleLogout(notify = true) {
+    if (state.authToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.authToken}`
+        }
+      }).catch(() => {});
+    }
+
+    state.authToken = null;
+    state.authUser = null;
+    localStorage.removeItem('campusbite_auth_token');
+    localStorage.removeItem('campusbite_auth_user');
+
+    applyLoggedOutState();
+    switchTab('auth');
+    if (notify) showToast('Signed out successfully', 'info');
+  }
+
+  function applyUserSession(user) {
+    // Header Profile Pill
+    const pill = document.getElementById('user-profile-pill');
+    const nameEl = document.getElementById('user-display-name');
+    const roleTag = document.getElementById('user-role-tag');
+    const authActionBtn = document.getElementById('btn-header-auth-action');
+    const roleIcon = document.getElementById('user-role-icon');
+
+    if (pill && nameEl && roleTag && authActionBtn) {
+      pill.style.display = 'inline-flex';
+      nameEl.textContent = user.name;
+      roleTag.textContent = user.role === 'staff' ? 'Staff Server' : 'Client';
+      roleTag.className = `user-role-tag ${user.role}`;
+      authActionBtn.textContent = 'Sign Out';
+      if (roleIcon) {
+        roleIcon.setAttribute('data-lucide', user.role === 'staff' ? 'chef-hat' : 'user');
+      }
+    }
+
+    // Role-based navigation tab isolation
+    const tabAuth = document.getElementById('tab-auth');
+    const tabStudent = document.getElementById('tab-student');
+    const tabStaff = document.getElementById('tab-staff');
+    const tabTv = document.getElementById('tab-tv');
+    const tabBench = document.getElementById('tab-testbench');
+
+    if (tabAuth) tabAuth.style.display = 'none';
+
+    if (user.role === 'student') {
+      // Student Backoffice: Client Portal + Public TV Display
+      if (tabStudent) tabStudent.style.display = 'inline-flex';
+      if (tabStaff) tabStaff.style.display = 'none';
+      if (tabTv) tabTv.style.display = 'inline-flex';
+      if (tabBench) tabBench.style.display = 'none';
+
+      // Pre-populate student join queue form with authenticated client details
+      const nameInput = document.getElementById('studentName');
+      const idInput = document.getElementById('studentId');
+      const authHint = document.getElementById('student-auth-hint');
+      const loggedName = document.getElementById('student-logged-name');
+      const loggedId = document.getElementById('student-logged-id');
+
+      if (nameInput) nameInput.value = user.name;
+      if (idInput && user.studentId) idInput.value = user.studentId;
+      if (authHint && loggedName && loggedId) {
+        loggedName.textContent = user.name;
+        loggedId.textContent = user.studentId || 'STU';
+        authHint.style.display = 'flex';
+      }
+    } else if (user.role === 'staff') {
+      // Staff Backoffice: Staff Queue Dashboard + TV Display + Concurrency Bench
+      if (tabStudent) tabStudent.style.display = 'none';
+      if (tabStaff) tabStaff.style.display = 'inline-flex';
+      if (tabTv) tabTv.style.display = 'inline-flex';
+      if (tabBench) tabBench.style.display = 'inline-flex';
+
+      const authHint = document.getElementById('student-auth-hint');
+      if (authHint) authHint.style.display = 'none';
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  function applyLoggedOutState() {
+    const pill = document.getElementById('user-profile-pill');
+    const authActionBtn = document.getElementById('btn-header-auth-action');
+    if (pill) pill.style.display = 'none';
+    if (authActionBtn) authActionBtn.textContent = 'Sign In';
+
+    const tabAuth = document.getElementById('tab-auth');
+    const tabStudent = document.getElementById('tab-student');
+    const tabStaff = document.getElementById('tab-staff');
+    const tabTv = document.getElementById('tab-tv');
+    const tabBench = document.getElementById('tab-testbench');
+
+    if (tabAuth) tabAuth.style.display = 'inline-flex';
+    if (tabStudent) tabStudent.style.display = 'inline-flex';
+    if (tabStaff) tabStaff.style.display = 'inline-flex';
+    if (tabTv) tabTv.style.display = 'inline-flex';
+    if (tabBench) tabBench.style.display = 'inline-flex';
+
+    const authHint = document.getElementById('student-auth-hint');
+    if (authHint) authHint.style.display = 'none';
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
   // ==========================================================================
   // NAVIGATION (Sidebar + Mobile)
   // ==========================================================================
-  const pageTitles = {
-    student: 'CampusBite',
-    staff: 'CampusBite',
-    tv: 'CampusBite',
-    testbench: 'CampusBite'
-  };
-
   function initNavigation() {
     // Nav buttons & sidebar links
     document.querySelectorAll('.sidebar-link, .nav-btn').forEach(btn => {
@@ -101,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (overlay) {
       overlay.addEventListener('click', () => {
         sidebar?.classList.remove('open');
-        overlay.classList.remove('visible');
+        overlay?.classList.remove('visible');
       });
     }
 
@@ -132,7 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (panel) panel.classList.add('active');
 
     state.activeTab = tab;
-    document.getElementById('page-title').textContent = pageTitles[tab] || tab;
+    document.getElementById('page-title').textContent = pageTitles[tab] || 'CampusBite';
     renderAllViews();
   }
 
@@ -472,14 +701,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function serveNextStudent() {
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (state.authToken) headers['Authorization'] = `Bearer ${state.authToken}`;
+
       const res = await fetch('/api/staff/serve-next', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ counterId: state.staffCounterId })
       });
       const data = await res.json();
       if (!data.success) {
-        showToast(data.message || 'No students waiting', 'warning');
+        showToast(data.message || data.error || 'No students waiting', 'warning');
       } else {
         showToast(`Calling ${data.ticket.ticketNumber} — ${data.ticket.studentName}`, 'success');
       }
@@ -493,12 +725,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const counter = state.serverQueues.counters[state.staffCounterId];
     if (!counter?.servingTicket) return;
     try {
-      await fetch('/api/staff/complete', {
+      const headers = { 'Content-Type': 'application/json' };
+      if (state.authToken) headers['Authorization'] = `Bearer ${state.authToken}`;
+
+      const res = await fetch('/api/staff/complete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ counterId: state.staffCounterId, ticketId: counter.servingTicket.id, action })
       });
-      showToast(action === 'no_show' ? 'Marked as no-show' : 'Ticket completed', 'success');
+      const data = await res.json();
+      if (data.success) {
+        showToast(action === 'no_show' ? 'Marked as no-show' : 'Ticket completed', 'success');
+      } else {
+        showToast(data.error || 'Action failed', 'error');
+      }
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     }

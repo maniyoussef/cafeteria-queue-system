@@ -3,479 +3,507 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Campus Cafeteria FIFO Queue System</title>
+  <meta name="description" content="CampusBite — A refined, real-time cafeteria queue management system. Choose your counter, take a seat, and we will call your number.">
+  <title>CampusBite — Cafeteria Queue</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@0.469.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
-  <div id="app" class="app-container">
-    <!-- Top Navigation Header -->
-    <header class="navbar">
-      <div class="brand">
-        <div class="brand-icon">
-          <i data-lucide="utensils"></i>
-        </div>
-        <div class="brand-text">
-          <h1>CampusBite <span>FIFO Queue</span></h1>
-          <p id="network-status-text" class="subtext">Connecting to Server...</p>
-        </div>
+  <div id="app" class="app-shell">
+
+    <!-- ===== HEADER & NAVIGATION ===== -->
+    <header class="navbar page-header">
+      <div class="page-header-left">
+        <h1 class="page-title" id="page-title">CampusBite</h1>
+        <p class="page-subtitle" id="network-status-text">Connecting to server&hellip;</p>
       </div>
 
-      <!-- Navigation Tabs / Role Switcher -->
-      <nav class="nav-tabs">
-        <button class="nav-btn active" data-tab="student">
-          <i data-lucide="smartphone"></i>
-          <span>Student Client (VM2/4)</span>
+      <!-- Navigation (repurposed from sidebar) -->
+      <nav class="sidebar-nav nav-tabs" id="sidebar" role="tablist" aria-label="Main navigation">
+        <button class="sidebar-link nav-btn active" data-tab="student" id="tab-student" role="tab" aria-selected="true" aria-controls="view-student">
+          <i data-lucide="user"></i>
+          <span>Student <small class="tab-hint">(VM2/4)</small></span>
         </button>
-        <button class="nav-btn" data-tab="staff">
-          <i data-lucide="chef-hat"></i>
-          <span>Staff Dashboard (VM3)</span>
+        <button class="sidebar-link nav-btn" data-tab="staff" id="tab-staff" role="tab" aria-selected="false" aria-controls="view-staff">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Staff <small class="tab-hint">(VM3)</small></span>
         </button>
-        <button class="nav-btn" data-tab="tv">
-          <i data-lucide="tv"></i>
-          <span>TV Display Board</span>
+        <button class="sidebar-link nav-btn" data-tab="tv" id="tab-tv" role="tab" aria-selected="false" aria-controls="view-tv">
+          <i data-lucide="monitor"></i>
+          <span>Display</span>
         </button>
-        <button class="nav-btn" data-tab="testbench">
-          <i data-lucide="cpu"></i>
-          <span>Network & Concurrency Bench</span>
+        <button class="sidebar-link nav-btn" data-tab="testbench" id="tab-testbench" role="tab" aria-selected="false" aria-controls="view-testbench">
+          <i data-lucide="terminal"></i>
+          <span>Bench</span>
         </button>
       </nav>
 
-      <!-- Live Connection Indicator -->
-      <div class="connection-badge" id="socket-status">
-        <span class="status-dot"></span>
-        <span class="status-label">Live Sync</span>
+      <div class="page-header-right">
+        <div class="header-stat">
+          <span class="header-stat-label">Waiting</span>
+          <span class="header-stat-value" id="header-total-waiting">0</span>
+        </div>
+        <div class="header-stat">
+          <span class="header-stat-label">Served</span>
+          <span class="header-stat-value" id="header-total-served">0</span>
+        </div>
       </div>
     </header>
 
-    <!-- Main Content Area -->
-    <main class="main-content">
+    <!-- Connection badge (top-right) -->
+    <div class="sidebar-footer">
+      <div class="connection-indicator" id="socket-status" aria-live="polite">
+        <span class="indicator-dot"></span>
+        <span class="status-label">Connecting&hellip;</span>
+      </div>
+    </div>
 
-      <!-- ========================================== -->
-      <!-- VIEW 1: STUDENT CLIENT (VM2 / VM4)         -->
-      <!-- ========================================== -->
-      <section id="view-student" class="view-panel active">
-        <div class="student-grid">
-          
-          <!-- Student Registration Card -->
-          <div class="card form-card" id="student-join-card">
-            <div class="card-header">
-              <h2><i data-lucide="user-plus"></i> Join Cafeteria Queue</h2>
-              <p>Select counter, enter details, and track your ticket in real-time.</p>
-            </div>
+    <!-- Mobile elements (hidden in redesign but kept for JS) -->
+    <div class="mobile-topbar" id="mobile-topbar" style="display:none;">
+      <button class="mobile-menu-btn" id="mobile-menu-btn"><i data-lucide="menu"></i></button>
+      <span class="mobile-brand">CampusBite</span>
+      <div class="connection-indicator connection-indicator-sm" id="socket-status-mobile">
+        <span class="indicator-dot"></span>
+      </div>
+    </div>
+    <div class="mobile-overlay" id="mobile-overlay"></div>
 
-            <form id="join-queue-form">
-              <div class="form-group">
-                <label>Select Cafeteria Counter</label>
-                <div class="counter-selector-grid">
-                  <label class="counter-radio active">
-                    <input type="radio" name="counterId" value="hot-meals" checked>
-                    <div class="radio-card">
-                      <i data-lucide="flame"></i>
-                      <div class="radio-info">
-                        <strong>Hot Meals</strong>
-                        <span>Burgers, Pasta, Bowls</span>
-                      </div>
-                      <span class="badge-mini" id="badge-hot-meals">0 waiting</span>
-                    </div>
-                  </label>
+    <!-- ===== MAIN CONTENT ===== -->
+    <div class="main-wrapper">
+      <main class="main-content">
 
-                  <label class="counter-radio">
-                    <input type="radio" name="counterId" value="snacks-drinks">
-                    <div class="radio-card">
-                      <i data-lucide="coffee"></i>
-                      <div class="radio-info">
-                        <strong>Snacks & Drinks</strong>
-                        <span>Coffee, Sandwiches, Drinks</span>
-                      </div>
-                      <span class="badge-mini" id="badge-snacks-drinks">0 waiting</span>
-                    </div>
-                  </label>
+        <!-- ===== VIEW 1: STUDENT PORTAL ===== -->
+        <section id="view-student" class="view-panel active" role="tabpanel" aria-labelledby="tab-student">
+          <div class="student-layout">
 
-                  <label class="counter-radio">
-                    <input type="radio" name="counterId" value="express-deli">
-                    <div class="radio-card">
-                      <i data-lucide="zap"></i>
-                      <div class="radio-info">
-                        <strong>Express Deli</strong>
-                        <span>Salads & Quick Grab</span>
-                      </div>
-                      <span class="badge-mini" id="badge-express-deli">0 waiting</span>
-                    </div>
-                  </label>
+            <!-- Optional Cutler-style hero placeholder: Replace with cafeteria dining room photography -->
+            <figure class="hero-image" aria-hidden="true">
+              <!-- <img src="cafeteria.jpg" alt="Cafeteria Dining Room"> -->
+            </figure>
+
+            <!-- Join Queue Card -->
+            <div class="card" id="student-join-card">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <h2 class="card-title">Join the Queue</h2>
+                  <p class="card-desc">Choose your counter and take a seat. We will call your number shortly.</p>
                 </div>
               </div>
 
-              <div class="form-row">
+              <form id="join-queue-form" class="form-body">
                 <div class="form-group">
-                  <label for="studentName">Your Name</label>
-                  <div class="input-icon">
-                    <i data-lucide="user"></i>
-                    <input type="text" id="studentName" placeholder="e.g. Alex Rivera" required>
+                  <label class="form-label">Select Counter</label>
+                  <div class="counter-selector">
+                    <label class="counter-option">
+                      <input type="radio" name="counterId" value="hot-meals" checked>
+                      <div class="counter-option-body">
+                        <div class="counter-option-icon"><i data-lucide="flame"></i></div>
+                        <div class="counter-option-text">
+                          <span class="counter-option-name">Hot Meals</span>
+                          <span class="counter-option-desc">Burgers, pasta, bowls</span>
+                        </div>
+                        <span class="counter-option-badge" id="badge-hot-meals">0</span>
+                      </div>
+                    </label>
+                    <label class="counter-option">
+                      <input type="radio" name="counterId" value="snacks-drinks">
+                      <div class="counter-option-body">
+                        <div class="counter-option-icon"><i data-lucide="coffee"></i></div>
+                        <div class="counter-option-text">
+                          <span class="counter-option-name">Snacks &amp; Drinks</span>
+                          <span class="counter-option-desc">Coffee, sandwiches</span>
+                        </div>
+                        <span class="counter-option-badge" id="badge-snacks-drinks">0</span>
+                      </div>
+                    </label>
+                    <label class="counter-option">
+                      <input type="radio" name="counterId" value="express-deli">
+                      <div class="counter-option-body">
+                        <div class="counter-option-icon"><i data-lucide="zap"></i></div>
+                        <div class="counter-option-text">
+                          <span class="counter-option-name">Express Deli</span>
+                          <span class="counter-option-desc">Salads, quick grab</span>
+                        </div>
+                        <span class="counter-option-badge" id="badge-express-deli">0</span>
+                      </div>
+                    </label>
                   </div>
                 </div>
-                <div class="form-group">
-                  <label for="studentId">Student ID (Optional)</label>
-                  <div class="input-icon">
-                    <i data-lucide="id-card"></i>
-                    <input type="text" id="studentId" placeholder="e.g. 2026-8842">
+
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label class="form-label" for="studentName">Your name <span class="required">*</span></label>
+                    <div class="input-wrapper">
+                      <i data-lucide="user" class="input-icon"></i>
+                      <input type="text" id="studentName" class="form-input" placeholder="Alex Rivera" required>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="studentId">Student ID <span class="optional">(optional)</span></label>
+                    <div class="input-wrapper">
+                      <i data-lucide="hash" class="input-icon"></i>
+                      <input type="text" id="studentId" class="form-input" placeholder="2026-8842">
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <!-- Quick Order Item Chips -->
-              <div class="form-group">
-                <label>Select Quick Order Items</label>
-                <div class="item-chips" id="item-chips-container">
-                  <button type="button" class="chip" data-item="Cheeseburger & Fries">🍔 Cheeseburger Combo</button>
-                  <button type="button" class="chip" data-item="Grilled Chicken Wrap">🌯 Chicken Wrap</button>
-                  <button type="button" class="chip" data-item="Pasta Marinara">🍝 Pasta Marinara</button>
-                  <button type="button" class="chip" data-item="Iced Vanilla Latte">☕ Iced Latte</button>
-                  <button type="button" class="chip" data-item="Fresh Salad Box">🥗 Salad Box</button>
-                  <button type="button" class="chip" data-item="Sparkling Soda">🥤 Soda</button>
+                <div class="form-group">
+                  <label class="form-label">Quick order items</label>
+                  <div class="chip-group" id="item-chips-container">
+                    <button type="button" class="chip" data-item="Cheeseburger & Fries">Cheeseburger</button>
+                    <button type="button" class="chip" data-item="Grilled Chicken Wrap">Chicken Wrap</button>
+                    <button type="button" class="chip" data-item="Pasta Marinara">Pasta</button>
+                    <button type="button" class="chip" data-item="Iced Vanilla Latte">Latte</button>
+                    <button type="button" class="chip" data-item="Fresh Salad Box">Salad</button>
+                    <button type="button" class="chip" data-item="Sparkling Soda">Soda</button>
+                  </div>
                 </div>
-              </div>
 
-              <div class="form-group">
-                <label for="orderNotes">Special Instructions / Custom Order</label>
-                <input type="text" id="orderNotes" placeholder="e.g. Extra sauce, no onions, hot coffee">
-              </div>
-
-              <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-join">
-                <i data-lucide="ticket"></i> Join Queue Now (Get FIFO Ticket)
-              </button>
-            </form>
-          </div>
-
-          <!-- Active Ticket Live Tracker Card -->
-          <div class="card tracker-card" id="student-tracker-card" style="display: none;">
-            <div class="card-header border-bottom">
-              <div class="header-status">
-                <span class="pulse-ring"></span>
-                <h2>Active Ticket Tracker</h2>
-              </div>
-              <button class="btn btn-ghost btn-sm" id="btn-sound-toggle">
-                <i data-lucide="volume-2" id="sound-icon"></i> <span id="sound-text">Sound ON</span>
-              </button>
-            </div>
-
-            <div class="ticket-display">
-              <div class="ticket-counter-tag" id="ticket-counter-name">Hot Meals Counter</div>
-              <div class="ticket-badge-large" id="ticket-number-display">HM-101</div>
-              
-              <div class="ticket-status-pill status-in-queue" id="ticket-status-pill">
-                <i data-lucide="clock"></i> <span id="ticket-status-text">IN QUEUE</span>
-              </div>
-
-              <!-- Metrics Row -->
-              <div class="tracker-metrics">
-                <div class="metric-box">
-                  <span class="metric-label">Line Position</span>
-                  <span class="metric-value highlight" id="ticket-position">#1</span>
-                  <span class="metric-sub" id="ticket-total-waiting">of 4 in queue</span>
+                <div class="form-group">
+                  <label class="form-label" for="orderNotes">Special instructions</label>
+                  <input type="text" id="orderNotes" class="form-input" placeholder="Extra sauce, no onions&hellip;" style="padding-left:16px;">
                 </div>
-                <div class="metric-box">
-                  <span class="metric-label">Est. Wait Time</span>
-                  <span class="metric-value" id="ticket-wait-est">~3.0 min</span>
-                  <span class="metric-sub">FIFO Queue Order</span>
-                </div>
-              </div>
 
-              <!-- Ticket Info Summary -->
-              <div class="ticket-details-box">
-                <div class="detail-row">
-                  <span class="label">Student Name:</span>
-                  <strong id="ticket-student-name">Alex Rivera</strong>
-                </div>
-                <div class="detail-row">
-                  <span class="label">Ordered Items:</span>
-                  <span id="ticket-items-list">Cheeseburger Combo</span>
-                </div>
-                <div class="detail-row">
-                  <span class="label">Joined At:</span>
-                  <span id="ticket-joined-time">12:30:45 PM</span>
-                </div>
-              </div>
-
-              <!-- Order Ready Callout Alert -->
-              <div class="ready-callout-banner" id="ready-callout" style="display: none;">
-                <div class="ready-anim-icon">🎉</div>
-                <h3>YOUR ORDER IS READY!</h3>
-                <p>Please proceed to <strong id="ready-counter-name">Hot Meals Counter</strong> to pick up ticket <strong id="ready-ticket-num">HM-101</strong></p>
-              </div>
-
-              <!-- Ticket Expired / Cancelled Failure Screen Banner -->
-              <div class="expired-callout-banner" id="ticket-expired-banner" style="display: none;">
-                <div class="expired-anim-icon"><i data-lucide="alert-circle"></i></div>
-                <h3>TICKET EXPIRED OR RESET</h3>
-                <p>Your ticket is no longer active in the line (queue was reset or ticket was cancelled).</p>
-              </div>
-
-              <div class="tracker-actions">
-                <button class="btn btn-danger btn-block" id="btn-cancel-ticket">
-                  <i data-lucide="x-circle"></i> Cancel / Leave Queue
+                <button type="submit" class="btn btn-primary btn-lg btn-full" id="btn-join">
+                  <i data-lucide="arrow-right"></i> Join Queue
                 </button>
-                <button class="btn btn-outline btn-block" id="btn-new-ticket" style="display: none;">
-                  <i data-lucide="plus-circle"></i> Join Another Queue
+              </form>
+            </div>
+
+            <!-- Active Ticket Tracker -->
+            <div class="card card-accent" id="student-tracker-card" style="display: none;">
+              <div class="card-header card-header-split">
+                <div class="card-title-group">
+                  <div class="live-badge" aria-live="polite"><span class="live-dot"></span> Live Tracker</div>
+                  <h2 class="card-title">Your Ticket</h2>
+                </div>
+                <button class="btn btn-ghost btn-sm" id="btn-sound-toggle">
+                  <i data-lucide="volume-2" id="sound-icon"></i>
+                  <span id="sound-text">Sound On</span>
                 </button>
               </div>
-            </div>
-          </div>
 
-        </div>
-      </section>
+              <div class="ticket-display">
+                <div class="ticket-header-tag" id="ticket-counter-name">Hot Meals Counter</div>
+                <div class="ticket-number" id="ticket-number-display" aria-live="polite">HM-101</div>
 
-      <!-- ========================================== -->
-      <!-- VIEW 2: STAFF DASHBOARD (VM3)              -->
-      <!-- ========================================== -->
-      <section id="view-staff" class="view-panel">
-        <div class="staff-header-row">
-          <!-- Counter Filter Tabs -->
-          <div class="segmented-control" id="staff-counter-tabs">
-            <button class="segment active" data-counter="hot-meals">
-              <i data-lucide="flame"></i> Hot Meals (<span id="staff-count-hm">0</span>)
-            </button>
-            <button class="segment" data-counter="snacks-drinks">
-              <i data-lucide="coffee"></i> Snacks & Drinks (<span id="staff-count-sd">0</span>)
-            </button>
-            <button class="segment" data-counter="express-deli">
-              <i data-lucide="zap"></i> Express Deli (<span id="staff-count-ex">0</span>)
-            </button>
-          </div>
-
-          <!-- Quick Stats -->
-          <div class="staff-stats-summary">
-            <div class="stat-pill">
-              <i data-lucide="users"></i> Total Waiting: <strong id="stat-total-waiting">0</strong>
-            </div>
-            <div class="stat-pill">
-              <i data-lucide="check-circle-2"></i> Served Today: <strong id="stat-total-served">0</strong>
-            </div>
-            <div class="stat-pill">
-              <i data-lucide="timer"></i> Avg Wait: <strong id="stat-avg-wait">0.0m</strong>
-            </div>
-          </div>
-        </div>
-
-        <div class="staff-grid">
-          <!-- Primary Call & Current Serving Box -->
-          <div class="card staff-action-card">
-            <div class="card-header">
-              <h2 id="staff-current-counter-title">Hot Meals Counter — Staff Controls</h2>
-              <span class="badge-hint">Keyboard: Press SPACE to Serve Next</span>
-            </div>
-
-            <!-- Primary Serve Next Button -->
-            <button class="btn btn-success btn-hero" id="btn-serve-next">
-              <i data-lucide="volume-2"></i>
-              <div class="hero-btn-text">
-                <span class="title">SERVE NEXT STUDENT (FIFO)</span>
-                <span class="subtitle">Pops the next student ticket at the front of line</span>
-              </div>
-            </button>
-
-            <!-- Currently Serving Ticket Display -->
-            <div class="now-serving-box" id="staff-serving-container">
-              <div class="empty-state" id="serving-empty-state">
-                <i data-lucide="inbox"></i>
-                <p>No student currently called. Click "SERVE NEXT" to call the next ticket in line.</p>
-              </div>
-
-              <div class="active-serving-card" id="serving-active-content" style="display: none;">
-                <div class="serving-top">
-                  <span class="serving-label">NOW SERVING</span>
-                  <span class="serving-ticket-number" id="staff-serving-number">HM-101</span>
+                <div class="ticket-status-pill status-in-queue" id="ticket-status-pill" aria-live="polite">
+                  <i data-lucide="clock"></i>
+                  <span id="ticket-status-text">In Queue</span>
                 </div>
-                <div class="serving-body">
-                  <h3><i data-lucide="user"></i> <span id="staff-serving-name">Alex Rivera</span></h3>
-                  <div class="items-chip-list" id="staff-serving-items">
-                    <!-- Order Items -->
+
+                <div class="kpi-row">
+                  <div class="kpi-card">
+                    <span class="kpi-label">Position</span>
+                    <span class="kpi-value" id="ticket-position" aria-live="polite">#1</span>
+                    <span class="kpi-sub" id="ticket-total-waiting">of 4 in queue</span>
                   </div>
-                  <p class="notes" id="staff-serving-notes"></p>
+                  <div class="kpi-divider" aria-hidden="true"></div>
+                  <div class="kpi-card">
+                    <span class="kpi-label">Est. Wait</span>
+                    <span class="kpi-value" id="ticket-wait-est" aria-live="polite">~3 min</span>
+                    <span class="kpi-sub">FIFO order</span>
+                  </div>
                 </div>
-                <div class="serving-actions">
-                  <button class="btn btn-primary" id="btn-complete-serving">
-                    <i data-lucide="check-check"></i> Complete & Mark Handed Over
+
+                <hr class="ticket-perforation" aria-hidden="true">
+
+                <div class="detail-list">
+                  <div class="detail-item">
+                    <span class="detail-label">Name</span>
+                    <span class="detail-value" id="ticket-student-name">Alex Rivera</span>
+                  </div>
+                  <div class="detail-item">
+                    <span class="detail-label">Items</span>
+                    <span class="detail-value" id="ticket-items-list">Cheeseburger Combo</span>
+                  </div>
+                  <div class="detail-item">
+                    <span class="detail-label">Joined</span>
+                    <span class="detail-value" id="ticket-joined-time">12:30:45 PM</span>
+                  </div>
+                </div>
+
+                <!-- Order Ready Banner -->
+                <div class="alert alert-success" id="ready-callout" style="display: none;" role="alert" aria-live="assertive">
+                  <div class="alert-icon"><i data-lucide="bell"></i></div>
+                  <div class="alert-body">
+                    <strong>Your order is ready.</strong>
+                    <p>Please proceed to <strong id="ready-counter-name">Hot Meals Counter</strong> &mdash; ticket <strong id="ready-ticket-num">HM-101</strong></p>
+                  </div>
+                </div>
+
+                <!-- Ticket Expired Banner -->
+                <div class="alert alert-danger" id="ticket-expired-banner" style="display: none;" role="alert">
+                  <i data-lucide="alert-circle"></i>
+                  <div class="alert-body">
+                    <strong>Ticket expired or reset</strong>
+                    <p>Your ticket is no longer active. The queue may have been reset.</p>
+                  </div>
+                </div>
+
+                <div class="ticket-actions">
+                  <button class="btn btn-danger btn-full" id="btn-cancel-ticket">
+                    <i data-lucide="x-circle"></i> Leave Queue
                   </button>
-                  <button class="btn btn-ghost" id="btn-recall-serving">
-                    <i data-lucide="bell"></i> Re-announce Ticket
-                  </button>
-                  <button class="btn btn-ghost text-danger" id="btn-noshow-serving">
-                    <i data-lucide="user-x"></i> Mark No-Show
+                  <button class="btn btn-secondary btn-full" id="btn-new-ticket" style="display: none;">
+                    <i data-lucide="plus"></i> Join Another Queue
                   </button>
                 </div>
               </div>
             </div>
+
           </div>
+        </section>
 
-          <!-- Active FIFO Waiting Queue List -->
-          <div class="card queue-list-card">
-            <div class="card-header">
-              <h2><i data-lucide="list-ordered"></i> Waiting Line (Strict FIFO Order)</h2>
-              <span class="badge" id="staff-queue-count-badge">0 Students waiting</span>
+        <!-- ===== VIEW 2: STAFF DASHBOARD ===== -->
+        <section id="view-staff" class="view-panel" role="tabpanel" aria-labelledby="tab-staff">
+
+          <!-- KPI Bar -->
+          <div class="kpi-bar">
+            <div class="kpi-bar-card">
+              <i data-lucide="users"></i>
+              <div class="kpi-bar-info">
+                <span class="kpi-bar-value" id="stat-total-waiting" aria-live="polite">0</span>
+                <span class="kpi-bar-label">Total Waiting</span>
+              </div>
             </div>
-
-            <div class="queue-items-container" id="staff-queue-list">
-              <!-- Dynamically populated FIFO tickets -->
-              <div class="empty-state">
-                <i data-lucide="check-circle-2"></i>
-                <p>Queue is empty! No students waiting at this counter.</p>
+            <div class="kpi-bar-card">
+              <i data-lucide="check-circle-2"></i>
+              <div class="kpi-bar-info">
+                <span class="kpi-bar-value" id="stat-total-served">0</span>
+                <span class="kpi-bar-label">Served Today</span>
+              </div>
+            </div>
+            <div class="kpi-bar-card">
+              <i data-lucide="clock"></i>
+              <div class="kpi-bar-info">
+                <span class="kpi-bar-value" id="stat-avg-wait">0m</span>
+                <span class="kpi-bar-label">Avg Wait</span>
               </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      <!-- ========================================== -->
-      <!-- VIEW 3: PUBLIC TV DISPLAY BOARD            -->
-      <!-- ========================================== -->
-      <section id="view-tv" class="view-panel">
-        <div class="tv-dashboard">
-          <div class="tv-header">
-            <div class="tv-brand">
-              <i data-lucide="utensils"></i> CAFETERIA ORDER BOARD
-            </div>
-            <div class="tv-clock" id="tv-clock-display">12:00:00 PM</div>
+          <!-- Counter Tabs -->
+          <div class="tab-bar" id="staff-counter-tabs" role="tablist">
+            <button class="tab-btn active" data-counter="hot-meals" role="tab">
+              <i data-lucide="flame"></i> Hot Meals <span class="tab-count" id="staff-count-hm">0</span>
+            </button>
+            <button class="tab-btn" data-counter="snacks-drinks" role="tab">
+              <i data-lucide="coffee"></i> Snacks &amp; Drinks <span class="tab-count" id="staff-count-sd">0</span>
+            </button>
+            <button class="tab-btn" data-counter="express-deli" role="tab">
+              <i data-lucide="zap"></i> Express Deli <span class="tab-count" id="staff-count-ex">0</span>
+            </button>
           </div>
 
-          <!-- Counters Serving Grid -->
-          <div class="tv-grid" id="tv-counters-grid">
-            <!-- Dynamically populated counters -->
-          </div>
-        </div>
-      </section>
+          <div class="staff-layout">
+            <!-- Staff Action Panel -->
+            <div class="card">
+              <div class="card-header card-header-split">
+                <h2 class="card-title" id="staff-current-counter-title">Hot Meals &mdash; Controls</h2>
+                <span class="badge badge-muted">Space to serve</span>
+              </div>
 
-      <!-- ========================================== -->
-      <!-- VIEW 4: NETWORK & CONCURRENCY BENCH        -->
-      <!-- ========================================== -->
-      <section id="view-testbench" class="view-panel">
-        <div class="bench-grid">
-          
-          <!-- Network & Multi-VM Configuration Card -->
-          <div class="card">
-            <div class="card-header">
-              <h2><i data-lucide="network"></i> Multi-VM Network Connection Info</h2>
-              <p>Connect VM2 (Student A), VM3 (Staff), VM4 (Student B) via LAN IP</p>
+              <button class="serve-next-btn" id="btn-serve-next">
+                <i data-lucide="arrow-right-circle"></i>
+                <div>
+                  <span class="serve-next-title">Serve Next</span>
+                  <span class="serve-next-sub">Call the next student in line</span>
+                </div>
+              </button>
+
+              <div class="serving-panel" id="staff-serving-container">
+                <div class="empty-state" id="serving-empty-state">
+                  <i data-lucide="inbox"></i>
+                  <p>No one is being served. A quiet moment.</p>
+                </div>
+
+                <div class="serving-card" id="serving-active-content" style="display: none;">
+                  <div class="serving-header">
+                    <span class="serving-label">Now Serving</span>
+                    <span class="serving-number" id="staff-serving-number" aria-live="polite">HM-101</span>
+                  </div>
+                  <div class="serving-details">
+                    <h3 id="staff-serving-name">Alex Rivera</h3>
+                    <div class="serving-items" id="staff-serving-items"></div>
+                    <p class="serving-notes" id="staff-serving-notes"></p>
+                  </div>
+                  <div class="serving-actions">
+                    <button class="btn btn-primary" id="btn-complete-serving">
+                      <i data-lucide="check"></i> Complete
+                    </button>
+                    <button class="btn btn-ghost" id="btn-recall-serving">
+                      <i data-lucide="bell"></i> Re-announce
+                    </button>
+                    <button class="btn btn-ghost btn-danger-text" id="btn-noshow-serving">
+                      <i data-lucide="user-x"></i> No-Show
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div class="network-info-body">
+            <!-- Queue List -->
+            <div class="card">
+              <div class="card-header card-header-split">
+                <h2 class="card-title">Waiting Line</h2>
+                <span class="badge" id="staff-queue-count-badge">0 waiting</span>
+              </div>
+              <div class="queue-list" id="staff-queue-list">
+                <div class="empty-state">
+                  <i data-lucide="check-circle-2"></i>
+                  <p>No one is waiting. A quiet moment.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== VIEW 3: TV DISPLAY ===== -->
+        <section id="view-tv" class="view-panel" role="tabpanel" aria-labelledby="tab-tv">
+          <div class="tv-board" data-theme="inverse">
+            <div class="tv-top-bar">
+              <div class="tv-logo"><i data-lucide="utensils"></i> CampusBite</div>
+              <div class="tv-clock" id="tv-clock-display" aria-live="off">12:00:00 PM</div>
+            </div>
+            <div class="tv-grid" id="tv-counters-grid"></div>
+          </div>
+        </section>
+
+        <!-- ===== VIEW 4: TEST BENCH ===== -->
+        <section id="view-testbench" class="view-panel" role="tabpanel" aria-labelledby="tab-testbench">
+          <div class="bench-layout">
+
+            <!-- Network Info -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <h2 class="card-title">Network &amp; Connection</h2>
+                  <p class="card-desc">Connection details and QR code for mobile access.</p>
+                </div>
+              </div>
               <div class="ip-list" id="network-ip-list">
-                <div class="ip-box">
-                  <span class="label">Local Server Host</span>
-                  <code>http://localhost:3000</code>
+                <div class="ip-item">
+                  <span class="ip-label">Local</span>
+                  <code class="ip-value">http://localhost:3000</code>
                 </div>
               </div>
-
-              <div class="qr-code-section">
-                <h3><i data-lucide="qr-code"></i> Mobile / VM Quick Connect QR Code</h3>
-                <p>Scan with phone or open URL in VM browser:</p>
+              <div class="qr-section">
                 <div id="qrcode-container"></div>
-                <p class="qr-url-text" id="qr-url-display">http://localhost:3000</p>
+                <p class="qr-url" id="qr-url-display">http://localhost:3000</p>
               </div>
             </div>
-          </div>
 
-          <!-- Concurrent Join Stress Tester -->
-          <div class="card">
-            <div class="card-header">
-              <h2><i data-lucide="zap"></i> Concurrent Join & Race-Condition Tester</h2>
-              <p>Simulates N simultaneous requests fired at the exact same millisecond to prove atomic FIFO sequence handling.</p>
-            </div>
-
-            <div class="bench-controls">
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Target Counter</label>
-                  <select id="sim-counter-select" class="form-control">
-                    <option value="hot-meals">Hot Meals Counter (HM)</option>
-                    <option value="snacks-drinks">Snacks & Drinks (SD)</option>
-                    <option value="express-deli">Express Deli (EX)</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label>Simultaneous Clients (Parallel Requests)</label>
-                  <select id="sim-count-select" class="form-control">
-                    <option value="2">2 Concurrent Requests (VM2 + VM4 simulation)</option>
-                    <option value="5" selected>5 Concurrent Requests</option>
-                    <option value="10">10 Concurrent Requests</option>
-                  </select>
+            <!-- Concurrency Tester -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <h2 class="card-title">Concurrency Tester</h2>
+                  <p class="card-desc">Verify atomic FIFO ticket assignment under parallel load.</p>
                 </div>
               </div>
-
-              <div class="action-bar">
-                <button class="btn btn-warning" id="btn-run-concurrency-test">
-                  <i data-lucide="play-circle"></i> Trigger Simultaneous Join Batch (Promise.all)
-                </button>
-                <button class="btn btn-danger btn-outline" id="btn-reset-queues">
-                  <i data-lucide="rotate-ccw"></i> Reset All Queues
-                </button>
+              <div class="form-body">
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label class="form-label">Target Counter</label>
+                    <select id="sim-counter-select" class="form-input form-select">
+                      <option value="hot-meals">Hot Meals (HM)</option>
+                      <option value="snacks-drinks">Snacks &amp; Drinks (SD)</option>
+                      <option value="express-deli">Express Deli (EX)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Parallel Requests</label>
+                    <select id="sim-count-select" class="form-input form-select">
+                      <option value="2">2 requests</option>
+                      <option value="5" selected>5 requests</option>
+                      <option value="10">10 requests</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <button class="btn btn-primary" id="btn-run-concurrency-test">
+                    <i data-lucide="play"></i> Run Test
+                  </button>
+                  <button class="btn btn-danger-outline" id="btn-reset-queues">
+                    <i data-lucide="rotate-ccw"></i> Reset Queues
+                  </button>
+                </div>
+              </div>
+              <div class="log-panel">
+                <div class="log-header"><i data-lucide="terminal"></i> Audit Log</div>
+                <div id="bench-log-container" class="log-console" role="log" aria-live="polite">
+                  <p class="log-entry log-info">Ready. Click "Run Test" to begin.</p>
+                </div>
               </div>
             </div>
 
-            <!-- Audit Logs & Verification Results -->
-            <div class="bench-results-box">
-              <h3><i data-lucide="shield-check"></i> FIFO Concurrency Audit Log</h3>
-              <div id="bench-log-container" class="log-console">
-                <p class="log-entry info">Click "Trigger Simultaneous Join Batch" to test atomic FIFO mutex logic.</p>
-              </div>
-            </div>
           </div>
+        </section>
 
-        </div>
-      </section>
+      </main>
 
-    </main>
+      <!-- Footer -->
+      <footer class="site-footer">
+        <span class="site-footer-text">CampusBite &mdash; University Cafeteria Queue System</span>
+      </footer>
+    </div>
 
-    <!-- Modal for Order Ready Alert -->
-    <div class="modal-backdrop" id="ready-modal" style="display: none;">
-      <div class="modal-card">
-        <div class="modal-icon">🔔</div>
-        <h2>YOUR ORDER IS READY!</h2>
-        <div class="modal-ticket" id="modal-ticket-num">HM-101</div>
-        <p>Please head to <strong id="modal-counter-name">Hot Meals Counter</strong> to pick up your order!</p>
-        <button class="btn btn-primary btn-block btn-lg" id="btn-modal-dismiss">
-          <i data-lucide="check"></i> I'm Picked Up
+    <!-- Order Ready Modal -->
+    <div class="modal-overlay" id="ready-modal" style="display: none;" role="dialog" aria-modal="true" aria-label="Order ready notification">
+      <div class="modal">
+        <div class="modal-badge modal-badge-success"><i data-lucide="bell"></i></div>
+        <h2 class="modal-title">Your order is ready.</h2>
+        <div class="modal-ticket-number" id="modal-ticket-num" aria-live="assertive">HM-101</div>
+        <p class="modal-desc">Please proceed to <strong id="modal-counter-name">Hot Meals Counter</strong> to collect your order.</p>
+        <button class="btn btn-primary btn-lg btn-full" id="btn-modal-dismiss">
+          <i data-lucide="check"></i> Got it
         </button>
       </div>
     </div>
 
-    <!-- User-Friendly Failure Screen 1: Server Disconnection & Network Offline Modal -->
-    <div class="modal-backdrop offline-backdrop" id="offline-overlay" style="display: none;">
-      <div class="modal-card error-card-glow">
-        <div class="error-badge-icon">
-          <i data-lucide="wifi-off"></i>
+    <!-- Confirm Dialog -->
+    <div class="modal-overlay" id="confirm-modal" style="display: none;" role="dialog" aria-modal="true" aria-label="Confirmation">
+      <div class="modal modal-sm">
+        <h2 class="modal-title" id="confirm-title">Confirm Action</h2>
+        <p class="modal-desc" id="confirm-message">Are you sure?</p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="confirm-cancel-btn">Cancel</button>
+          <button class="btn btn-danger" id="confirm-ok-btn">Confirm</button>
         </div>
-        <h2 class="error-title">Server Connection Lost</h2>
-        <p class="error-desc">Unable to communicate with VM1 Cafeteria Server. Network connection was interrupted or server is restarting.</p>
-        
-        <div class="retry-countdown-box">
-          <span class="spinner-dot"></span>
-          <span id="offline-retry-timer">Auto-retrying connection in 3s...</span>
-        </div>
+      </div>
+    </div>
 
-        <div class="troubleshoot-accordion">
-          <details>
-            <summary><i data-lucide="help-circle"></i> Multi-VM Troubleshooting Tips</summary>
-            <ul>
-              <li>Ensure <strong>VM1 Server</strong> is running (<code>npm start</code>).</li>
-              <li>Verify your VM network interface (e.g. <code>http://192.168.x.x:3000</code>).</li>
-              <li>Check firewall settings on host server port 3000.</li>
-            </ul>
-          </details>
+    <!-- Offline Overlay -->
+    <div class="modal-overlay modal-overlay-opaque" id="offline-overlay" style="display: none;" role="dialog" aria-modal="true" aria-label="Connection lost">
+      <div class="modal modal-error">
+        <div class="modal-badge modal-badge-error"><i data-lucide="wifi-off"></i></div>
+        <h2 class="modal-title">Connection Lost</h2>
+        <p class="modal-desc">We have lost the connection. Retrying shortly.</p>
+        <div class="retry-box">
+          <span class="spinner"></span>
+          <span id="offline-retry-timer">Retrying in 3s&hellip;</span>
         </div>
-
-        <button class="btn btn-warning btn-block btn-lg" id="btn-manual-reconnect">
-          <i data-lucide="refresh-cw"></i> Retry Connection Now
+        <details class="troubleshoot">
+          <summary>Troubleshooting</summary>
+          <ul>
+            <li>Ensure the server is running (<code>npm start</code>).</li>
+            <li>Check the network interface address.</li>
+            <li>Verify firewall rules for port 3000.</li>
+          </ul>
+        </details>
+        <button class="btn btn-primary btn-full" id="btn-manual-reconnect">
+          <i data-lucide="refresh-cw"></i> Retry Now
         </button>
       </div>
     </div>
 
-    <!-- Toast Notification System Container for Failure & Alert Messages -->
-    <div class="toast-container" id="toast-container"></div>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
   </div>
 

@@ -17,12 +17,35 @@ document.addEventListener('DOMContentLoaded', () => {
   const savedUser = JSON.parse(localStorage.getItem('campusbite_auth_user') || 'null');
   const initialTab = savedUser ? (savedUser.role === 'staff' ? 'staff' : 'student') : 'auth';
 
+  function getTicketStorageKey() {
+    return state.authUser ? `myCafeteriaTicket_${state.authUser.id}` : 'myCafeteriaTicket_guest';
+  }
+
+  function loadMyTicket() {
+    if (state.authUser && state.authUser.role === 'staff') return null;
+    return JSON.parse(localStorage.getItem(getTicketStorageKey()) || 'null');
+  }
+
+  function saveMyTicket(ticket) {
+    state.myTicket = ticket;
+    if (ticket) {
+      localStorage.setItem(getTicketStorageKey(), JSON.stringify(ticket));
+    } else {
+      localStorage.removeItem(getTicketStorageKey());
+    }
+  }
+
+  function clearMyTicket() {
+    state.myTicket = null;
+    localStorage.removeItem(getTicketStorageKey());
+  }
+
   const state = {
     connected: false,
     soundEnabled: true,
     activeTab: initialTab,
     staffCounterId: 'hot-meals',
-    myTicket: JSON.parse(localStorage.getItem('myCafeteriaTicket') || 'null'),
+    myTicket: loadMyTicket(),
     serverQueues: null,
     networkIPs: [],
     authToken: localStorage.getItem('campusbite_auth_token') || null,
@@ -67,11 +90,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
   socket.on('ticket:called', (payload) => {
     const { ticket, counterId } = payload;
-    if (state.soundEnabled) playAudioChime();
+    
+    // Only student clients whose ticket matches should trigger sound and ready modal!
+    // Staff members who called the ticket should NOT get student pickup modal or chime!
+    if (state.authUser && state.authUser.role === 'staff') {
+      return;
+    }
+
     if (state.myTicket && (state.myTicket.id === ticket.id || state.myTicket.ticketNumber === ticket.ticketNumber)) {
       state.myTicket.status = 'now_serving';
       saveMyTicket(state.myTicket);
+      if (state.soundEnabled) playAudioChime();
+      showToast(`Ticket #${ticket.ticketNumber}: Your order is ready at ${ticket.counterName || counterId}!`, 'success');
       showOrderReadyModal(ticket, counterId);
+      renderStudentTracker();
+    }
+  });
+
+  socket.on('ticket:completed', (payload) => {
+    const { ticketId, completedTicket, action } = payload;
+    const currentTicket = state.myTicket;
+    if (!currentTicket) return;
+
+    const isMatch = currentTicket.id === ticketId || 
+                    currentTicket.ticketNumber === ticketId ||
+                    (completedTicket && (currentTicket.id === completedTicket.id || currentTicket.ticketNumber === completedTicket.ticketNumber));
+
+    if (isMatch) {
+      const isNoShow = action === 'no_show' || completedTicket?.status === 'no_show';
+      state.myTicket.status = isNoShow ? 'no_show' : 'completed';
+      state.myTicket.finishedAt = new Date().toISOString();
+      saveMyTicket(state.myTicket);
+
+      // Close ready modal if open
+      const readyModal = document.getElementById('ready-modal');
+      if (readyModal) readyModal.style.display = 'none';
+
+      if (isNoShow) {
+        showToast(`Ticket #${state.myTicket.ticketNumber} was marked as no-show.`, 'warning');
+      } else {
+        showToast(`Your order #${state.myTicket.ticketNumber} has been handed over! Enjoy your meal.`, 'success');
+        if (state.soundEnabled) playAudioChime();
+      }
+
+      renderStudentTracker();
     }
   });
 
@@ -255,6 +317,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabTv) tabTv.style.display = 'inline-flex';
       if (tabBench) tabBench.style.display = 'none';
 
+      state.myTicket = loadMyTicket();
+      renderStudentTracker();
+
       // Pre-populate student join queue form with authenticated client details
       const nameInput = document.getElementById('studentName');
       const idInput = document.getElementById('studentId');
@@ -276,6 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabTv) tabTv.style.display = 'inline-flex';
       if (tabBench) tabBench.style.display = 'inline-flex';
 
+      state.myTicket = null; // Staff operates the server, does not hold client tickets
       const authHint = document.getElementById('student-auth-hint');
       if (authHint) authHint.style.display = 'none';
     }
@@ -288,6 +354,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const authActionBtn = document.getElementById('btn-header-auth-action');
     if (pill) pill.style.display = 'none';
     if (authActionBtn) authActionBtn.textContent = 'Sign In';
+
+    state.myTicket = loadMyTicket();
+    renderStudentTracker();
 
     const tabAuth = document.getElementById('tab-auth');
     const tabStudent = document.getElementById('tab-student');
@@ -592,27 +661,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function saveMyTicket(ticket) {
-    state.myTicket = ticket;
-    localStorage.setItem('myCafeteriaTicket', JSON.stringify(ticket));
-  }
-  function clearMyTicket() {
-    state.myTicket = null;
-    localStorage.removeItem('myCafeteriaTicket');
-  }
-
   function renderStudentTracker() {
     const joinCard = document.getElementById('student-join-card');
     const trackerCard = document.getElementById('student-tracker-card');
 
     if (!state.myTicket) {
-      joinCard.style.display = 'block';
-      trackerCard.style.display = 'none';
+      if (joinCard) joinCard.style.display = 'block';
+      if (trackerCard) trackerCard.style.display = 'none';
       return;
     }
 
-    joinCard.style.display = 'block';
-    trackerCard.style.display = 'block';
+    if (joinCard) joinCard.style.display = 'block';
+    if (trackerCard) trackerCard.style.display = 'block';
 
     const t = state.myTicket;
     document.getElementById('ticket-counter-name').textContent = t.counterName || 'Cafeteria Counter';
@@ -621,51 +681,84 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('ticket-items-list').textContent = (t.items?.length) ? t.items.join(', ') : 'Standard Meal';
     document.getElementById('ticket-joined-time').textContent = new Date(t.timestampMs || Date.now()).toLocaleTimeString();
 
+    const readyCallout = document.getElementById('ready-callout');
     const expiredBanner = document.getElementById('ticket-expired-banner');
+    const statusPill = document.getElementById('ticket-status-pill');
+    const statusText = document.getElementById('ticket-status-text');
+    const positionEl = document.getElementById('ticket-position');
+    const waitEstEl = document.getElementById('ticket-wait-est');
+    const cancelBtn = document.getElementById('btn-cancel-ticket');
+    const newTicketBtn = document.getElementById('btn-new-ticket');
+    const ticketNumEl = document.getElementById('ticket-number-display');
+
     if (expiredBanner) expiredBanner.style.display = 'none';
+    if (readyCallout) readyCallout.style.display = 'none';
+    if (ticketNumEl) ticketNumEl.classList.remove('strikethrough');
 
-    if (state.serverQueues && state.serverQueues.counters[t.counterId]) {
-      const counter = state.serverQueues.counters[t.counterId];
+    const counter = state.serverQueues?.counters?.[t.counterId];
 
-      if (counter.servingTicket && (counter.servingTicket.id === t.id || counter.servingTicket.ticketNumber === t.ticketNumber)) {
-        t.status = 'now_serving';
-        document.getElementById('ticket-status-pill').className = 'ticket-status-pill status-serving';
-        document.getElementById('ticket-status-text').textContent = 'Now Serving';
-        document.getElementById('ticket-position').textContent = 'NOW';
-        document.getElementById('ticket-position').style.color = '';
-        document.getElementById('ticket-wait-est').textContent = '0 min';
-        document.getElementById('ready-callout').style.display = 'flex';
+    // State 1: Currently being called / served at counter
+    if (counter?.servingTicket && (counter.servingTicket.id === t.id || counter.servingTicket.ticketNumber === t.ticketNumber)) {
+      t.status = 'now_serving';
+      statusPill.className = 'ticket-status-pill status-serving';
+      statusText.innerHTML = '<i data-lucide="bell"></i> Now Serving';
+      positionEl.textContent = 'NOW';
+      positionEl.style.color = '';
+      waitEstEl.textContent = '0 min';
+      if (readyCallout) {
+        readyCallout.style.display = 'flex';
         document.getElementById('ready-counter-name').textContent = t.counterName;
         document.getElementById('ready-ticket-num').textContent = t.ticketNumber;
-        document.getElementById('btn-cancel-ticket').style.display = 'none';
-        document.getElementById('btn-new-ticket').style.display = 'block';
-        return;
       }
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      if (newTicketBtn) newTicketBtn.style.display = 'block';
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
 
-      const activeQueue = counter.activeQueue || [];
-      const foundIdx = activeQueue.findIndex(item => item.id === t.id || item.ticketNumber === t.ticketNumber);
+    // Check if waiting in active FIFO queue
+    const activeQueue = counter?.activeQueue || [];
+    const foundIdx = activeQueue.findIndex(item => item.id === t.id || item.ticketNumber === t.ticketNumber);
 
-      if (foundIdx !== -1) {
-        const q = activeQueue[foundIdx];
-        t.status = 'in_queue';
-        document.getElementById('ticket-status-pill').className = 'ticket-status-pill status-in-queue';
-        document.getElementById('ticket-status-text').textContent = 'In Queue';
-        document.getElementById('ticket-position').textContent = `#${q.position}`;
-        document.getElementById('ticket-position').style.color = '';
-        document.getElementById('ticket-total-waiting').textContent = `of ${activeQueue.length} in queue`;
-        document.getElementById('ticket-wait-est').textContent = `~${q.estimatedWaitMinutes} min`;
-        document.getElementById('ready-callout').style.display = 'none';
-        document.getElementById('btn-cancel-ticket').style.display = 'block';
-        document.getElementById('btn-new-ticket').style.display = 'none';
-      } else if (t.status !== 'now_serving') {
-        document.getElementById('ticket-status-pill').className = 'ticket-status-pill';
-        document.getElementById('ticket-status-text').textContent = 'Completed';
-        document.getElementById('ticket-position').textContent = '—';
-        document.getElementById('btn-cancel-ticket').style.display = 'none';
-        document.getElementById('btn-new-ticket').style.display = 'block';
-        if (expiredBanner) expiredBanner.style.display = 'flex';
+    if (foundIdx !== -1) {
+      // State 2: Waiting in queue
+      const q = activeQueue[foundIdx];
+      t.status = 'in_queue';
+      statusPill.className = 'ticket-status-pill status-in-queue';
+      statusText.innerHTML = '<i data-lucide="clock"></i> In Queue';
+      positionEl.textContent = `#${q.position}`;
+      positionEl.style.color = '';
+      document.getElementById('ticket-total-waiting').textContent = `of ${activeQueue.length} in queue`;
+      waitEstEl.textContent = `~${q.estimatedWaitMinutes} min`;
+      if (readyCallout) readyCallout.style.display = 'none';
+      if (cancelBtn) cancelBtn.style.display = 'block';
+      if (newTicketBtn) newTicketBtn.style.display = 'none';
+    } else {
+      // State 3: Either completed, marked no-show, or cancelled
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      if (newTicketBtn) newTicketBtn.style.display = 'block';
+
+      if (t.status === 'no_show') {
+        statusPill.className = 'ticket-status-pill status-expired';
+        statusText.innerHTML = '<i data-lucide="user-x"></i> No-Show / Missed';
+        positionEl.textContent = 'MISSED';
+        waitEstEl.textContent = '0 min';
+        if (ticketNumEl) ticketNumEl.classList.add('strikethrough');
+        if (expiredBanner) {
+          expiredBanner.style.display = 'flex';
+          const expDesc = expiredBanner.querySelector('.alert-body p');
+          if (expDesc) expDesc.textContent = 'Your ticket was marked as no-show by staff. Please proceed to the counter or join a new line.';
+        }
+      } else {
+        // State 4: Completed & Handed Over
+        t.status = 'completed';
+        statusPill.className = 'ticket-status-pill status-completed';
+        statusText.innerHTML = '<i data-lucide="check-check"></i> Completed & Handed Over';
+        positionEl.textContent = 'SERVED';
+        waitEstEl.textContent = '0 min';
       }
     }
+    if (window.lucide) window.lucide.createIcons();
   }
 
   // ==========================================================================

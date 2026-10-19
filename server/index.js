@@ -52,6 +52,12 @@ io.on('connection', (socket) => {
   // Send current queue state immediately to newly connected client
   socket.emit('queue:updated', queueManager.getState());
 
+  socket.on('staff:recall', (data) => {
+    if (data?.ticket) {
+      broadcastStateUpdate('ticket:called', { ticket: data.ticket, counterId: data.ticket.counterId, isRecall: true });
+    }
+  });
+
   socket.on('disconnect', () => {
     // Client disconnected
   });
@@ -193,7 +199,12 @@ app.post('/api/staff/complete', async (req, res) => {
     const result = await queueManager.completeTicket(counterId, ticketId, action);
 
     if (result.success) {
-      broadcastStateUpdate('ticket:completed', { counterId, ticketId });
+      broadcastStateUpdate('ticket:completed', {
+        counterId,
+        ticketId,
+        completedTicket: result.completedTicket,
+        action: action || 'complete'
+      });
       res.json(result);
     } else {
       res.status(400).json(result);

@@ -918,6 +918,26 @@ code, .log-console, .ip-value {
   animation: none;
 }
 
+/* COMPLETED / HANDED OVER: sand fill, black text */
+.status-completed {
+  background: var(--sand);
+  border: 1px solid var(--ink);
+  color: var(--ink);
+}
+
+/* NO-SHOW / EXPIRED: dashed border, ink-muted */
+.status-expired,
+.status-noshow {
+  background: transparent;
+  border: 1px dashed var(--ink);
+  color: var(--ink-muted);
+}
+
+.ticket-number.strikethrough {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
 /* Stat pills */
 .stat-pill {
   display: inline-flex;

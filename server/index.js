@@ -12,7 +12,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: '*',
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST', 'QUERY']
   }
 });
 
@@ -126,6 +126,27 @@ app.get('/api/status', (req, res) => {
 // 2. Get current queue state
 app.get('/api/queues', (req, res) => {
   res.json(queueManager.getState());
+});
+
+// 2.1 QUERY the queue state (IETF draft method: safe + idempotent, carries a body)
+app.all('/api/queues', (req, res, next) => {
+  if (req.method !== 'QUERY') return next(); // let the GET route above handle GET
+
+  // express.json() skips non-standard methods, so parse the body here
+  express.json()(req, res, () => {
+    const body = req.body || {};
+    const state = queueManager.getState();
+    const counterFilter = body.counterId;
+
+    if (counterFilter) {
+      const one = state.counters[counterFilter];
+      if (!one) {
+        return res.status(404).json({ status: 'error', message: 'resource not found' });
+      }
+      return res.json({ counter: one, lastUpdated: state.lastUpdated });
+    }
+    res.json(state);
+  });
 });
 
 // 3. Student Joins Queue
@@ -293,4 +314,3 @@ server.listen(PORT, HOST, () => {
   }
   console.log('======================================================\n');
 });
-

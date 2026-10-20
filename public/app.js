@@ -5,7 +5,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) window.lucide.createIcons();
 
-  // --- Application State ---
   const pageTitles = {
     auth: 'CampusBite',
     student: 'CampusBite',
@@ -52,39 +51,36 @@ document.addEventListener('DOMContentLoaded', () => {
     authUser: savedUser
   };
 
-  // Live connection to the VM1 server (see config.js).
-  // The Node server speaks Socket.IO; the Python server (server/server.py) has no
-  // Socket.IO, so its client script never loads and we fall back to its
-  // Server-Sent Events stream at /api/events, which sends the same events.
-  const SERVER_URL = window.SERVER_URL || '';
-  const socket = typeof window.io === 'function' ? io(SERVER_URL, {
-    reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 3000,
-    reconnectionAttempts: Infinity
-  }) : createEventStreamSocket(SERVER_URL);
+  const SERVER_URL = window.SERVER_URL || window.location.origin;
 
-  // Minimal Socket.IO look-alike (on / emit / connect) on top of EventSource
   function createEventStreamSocket(baseUrl) {
-    const lifecycleEvents = ['connect', 'disconnect', 'connect_error'];
     const handlers = {};
+    const lifecycleEvents = ['connect', 'disconnect', 'connect_error'];
+
     let source = null;
     let connected = false;
 
-    const fire = (event, payload) => (handlers[event] || []).forEach(fn => fn(payload));
+    function fire(event, payload) {
+      (handlers[event] || []).forEach(fn => fn(payload));
+    }
 
-    const attach = (event) => {
-      if (lifecycleEvents.includes(event)) return;
-      source.addEventListener(event, (e) => fire(event, JSON.parse(e.data)));
-    };
+    function attach(event) {
+      if (lifecycleEvents.includes(event) || !source) return;
+      source.addEventListener(event, (e) => {
+        try {
+          fire(event, JSON.parse(e.data));
+        } catch {
+          fire(event, e.data);
+        }
+      });
+    }
 
-    const open = () => {
+    function open() {
       source = new EventSource(`${baseUrl}/api/events`);
       source.onopen = () => {
         connected = true;
         fire('connect');
       };
-      // EventSource retries on its own; only report the first drop as a disconnect
       source.onerror = () => {
         if (connected) {
           connected = false;
@@ -93,8 +89,9 @@ document.addEventListener('DOMContentLoaded', () => {
           fire('connect_error', new Error('Server unreachable'));
         }
       };
+
       Object.keys(handlers).forEach(attach);
-    };
+    }
 
     open();
 
@@ -108,13 +105,21 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       emit() {},
       connect() {
-        // CLOSED means the server answered with something other than an event
-        // stream (e.g. the Node server was down when the page loaded) — reload
-        // so the right client is picked once the server is back.
-        if (source.readyState === EventSource.CLOSED) window.location.reload();
+        if (source && source.readyState === EventSource.CLOSED) {
+          window.location.reload();
+        }
       }
     };
   }
+
+  const socket = typeof window.io === 'function'
+    ? io(SERVER_URL, {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 3000,
+        reconnectionAttempts: Infinity
+      })
+    : createEventStreamSocket(SERVER_URL);
 
   let retryTimerInterval = null;
   let retrySecondsLeft = 3;
@@ -146,9 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   socket.on('ticket:called', (payload) => {
     const { ticket, counterId } = payload;
-    
-    // Only student clients whose ticket matches should trigger sound and ready modal!
-    // Staff members who called the ticket should NOT get student pickup modal or chime!
+
     if (state.authUser && state.authUser.role === 'staff') {
       return;
     }
@@ -168,9 +171,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentTicket = state.myTicket;
     if (!currentTicket) return;
 
-    const isMatch = currentTicket.id === ticketId || 
-                    currentTicket.ticketNumber === ticketId ||
-                    (completedTicket && (currentTicket.id === completedTicket.id || currentTicket.ticketNumber === completedTicket.ticketNumber));
+    const isMatch =
+      currentTicket.id === ticketId ||
+      currentTicket.ticketNumber === ticketId ||
+      (completedTicket && (currentTicket.id === completedTicket.id || currentTicket.ticketNumber === completedTicket.ticketNumber));
 
     if (isMatch) {
       const isNoShow = action === 'no_show' || completedTicket?.status === 'no_show';
@@ -178,7 +182,6 @@ document.addEventListener('DOMContentLoaded', () => {
       state.myTicket.finishedAt = new Date().toISOString();
       saveMyTicket(state.myTicket);
 
-      // Close ready modal if open
       const readyModal = document.getElementById('ready-modal');
       if (readyModal) readyModal.style.display = 'none';
 
@@ -193,7 +196,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // --- Init ---
   fetchNetworkStatus();
   initAuthService();
   initNavigation();
@@ -203,14 +205,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initModals();
   initOfflineOverlay();
 
-  // Set initial active tab
   switchTab(state.activeTab);
 
-  // ==========================================================================
-  // AUTHENTICATION & ROLE-BASED ACCESS CONTROL
-  // ==========================================================================
   function initAuthService() {
-    // 1. Hook Direct Login Form
     const authForm = document.getElementById('auth-login-form');
     if (authForm) {
       authForm.addEventListener('submit', async (e) => {
@@ -221,7 +218,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // 2. Hook Header Auth Action Button (Sign In / Sign Out)
     const headerAuthBtn = document.getElementById('btn-header-auth-action');
     if (headerAuthBtn) {
       headerAuthBtn.addEventListener('click', () => {
@@ -233,7 +229,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // 3. Hook Quick-login Profile Cards
     document.querySelectorAll('.credential-card').forEach(card => {
       card.addEventListener('click', () => {
         const username = card.dataset.username;
@@ -246,24 +241,23 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // 4. Validate or Restore Session
     if (state.authToken) {
-      fetch('/api/auth/me', {
-        headers: { 'Authorization': `Bearer ${state.authToken}` }
+      fetch(`${SERVER_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${state.authToken}` }
       })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.user) {
-          state.authUser = data.user;
-          localStorage.setItem('campusbite_auth_user', JSON.stringify(data.user));
-          applyUserSession(data.user);
-        } else {
-          handleLogout(false);
-        }
-      })
-      .catch(() => {
-        if (state.authUser) applyUserSession(state.authUser);
-      });
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.user) {
+            state.authUser = data.user;
+            localStorage.setItem('campusbite_auth_user', JSON.stringify(data.user));
+            applyUserSession(data.user);
+          } else {
+            handleLogout(false);
+          }
+        })
+        .catch(() => {
+          if (state.authUser) applyUserSession(state.authUser);
+        });
     } else {
       applyLoggedOutState();
     }
@@ -278,12 +272,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (submitBtn) submitBtn.disabled = true;
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
       const data = await res.json();
+
       if (submitBtn) submitBtn.disabled = false;
 
       if (data.success && data.token) {
@@ -295,7 +290,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`Welcome, ${data.user.name}`, 'success');
         applyUserSession(data.user);
 
-        // Direct to designated backoffice
         if (data.user.role === 'staff') {
           switchTab('staff');
         } else {
@@ -319,11 +313,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleLogout(notify = true) {
     if (state.authToken) {
-      fetch('/api/auth/logout', {
+      fetch(`${SERVER_URL}/api/auth/logout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${state.authToken}`
+          Authorization: `Bearer ${state.authToken}`
         }
       }).catch(() => {});
     }
@@ -339,7 +333,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function applyUserSession(user) {
-    // Header Profile Pill
     const pill = document.getElementById('user-profile-pill');
     const nameEl = document.getElementById('user-display-name');
     const roleTag = document.getElementById('user-role-tag');
@@ -363,7 +356,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (headerStats) headerStats.style.display = 'flex';
     if (sidebar) sidebar.style.display = 'flex';
 
-    // Role-based navigation tab isolation
     const tabAuth = document.getElementById('tab-auth');
     const tabStudent = document.getElementById('tab-student');
     const tabStaff = document.getElementById('tab-staff');
@@ -373,7 +365,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tabAuth) tabAuth.style.display = 'none';
 
     if (user.role === 'student') {
-      // Student Backoffice: Client Portal + Public TV Display
       if (tabStudent) tabStudent.style.display = 'inline-flex';
       if (tabStaff) tabStaff.style.display = 'none';
       if (tabTv) tabTv.style.display = 'inline-flex';
@@ -382,7 +373,6 @@ document.addEventListener('DOMContentLoaded', () => {
       state.myTicket = loadMyTicket();
       renderStudentTracker();
 
-      // Pre-populate student join queue form with authenticated client details
       const nameInput = document.getElementById('studentName');
       const idInput = document.getElementById('studentId');
       const authHint = document.getElementById('student-auth-hint');
@@ -397,13 +387,12 @@ document.addEventListener('DOMContentLoaded', () => {
         authHint.style.display = 'flex';
       }
     } else if (user.role === 'staff') {
-      // Staff Backoffice: Staff Queue Dashboard + TV Display + Concurrency Bench
       if (tabStudent) tabStudent.style.display = 'none';
       if (tabStaff) tabStaff.style.display = 'inline-flex';
       if (tabTv) tabTv.style.display = 'inline-flex';
       if (tabBench) tabBench.style.display = 'inline-flex';
 
-      state.myTicket = null; // Staff operates the server, does not hold client tickets
+      state.myTicket = null;
       const authHint = document.getElementById('student-auth-hint');
       if (authHint) authHint.style.display = 'none';
     }
@@ -442,16 +431,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // ==========================================================================
-  // NAVIGATION (Sidebar + Mobile)
-  // ==========================================================================
   function initNavigation() {
-    // Nav buttons & sidebar links
     document.querySelectorAll('.sidebar-link, .nav-btn').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // Mobile menu
     const menuBtn = document.getElementById('mobile-menu-btn');
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('mobile-overlay');
@@ -469,7 +453,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Close sidebar on nav click (mobile)
     document.querySelectorAll('.sidebar-link, .nav-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         if (window.innerWidth <= 768) {
@@ -481,7 +464,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function switchTab(tab) {
-    // Guests may only see the login screen
     if (!state.authUser) {
       tab = 'auth';
     } else if (state.authUser.role === 'student') {
@@ -494,6 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
       b.classList.remove('active');
       b.setAttribute('aria-selected', 'false');
     });
+
     const activeBtns = document.querySelectorAll(`.sidebar-link[data-tab="${tab}"], .nav-btn[data-tab="${tab}"]`);
     activeBtns.forEach(b => {
       b.classList.add('active');
@@ -505,13 +488,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (panel) panel.classList.add('active');
 
     state.activeTab = tab;
-    document.getElementById('page-title').textContent = pageTitles[tab] || 'CampusBite';
+    const pageTitle = document.getElementById('page-title');
+    if (pageTitle) pageTitle.textContent = pageTitles[tab] || 'CampusBite';
+
     renderAllViews();
   }
 
-  // ==========================================================================
-  // TOAST NOTIFICATIONS
-  // ==========================================================================
   function showToast(message, type = 'error') {
     const container = document.getElementById('toast-container');
     if (!container) return;
@@ -532,18 +514,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 3500);
   }
 
-  // ==========================================================================
-  // CONFIRM DIALOG (replaces native confirm())
-  // ==========================================================================
   function showConfirm(title, message) {
     return new Promise((resolve) => {
       const modal = document.getElementById('confirm-modal');
-      document.getElementById('confirm-title').textContent = title;
-      document.getElementById('confirm-message').textContent = message;
-      modal.style.display = 'flex';
-
+      const titleEl = document.getElementById('confirm-title');
+      const messageEl = document.getElementById('confirm-message');
       const okBtn = document.getElementById('confirm-ok-btn');
       const cancelBtn = document.getElementById('confirm-cancel-btn');
+
+      if (!modal || !titleEl || !messageEl || !okBtn || !cancelBtn) {
+        resolve(false);
+        return;
+      }
+
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      modal.style.display = 'flex';
 
       function cleanup(result) {
         modal.style.display = 'none';
@@ -551,20 +537,24 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelBtn.removeEventListener('click', onCancel);
         resolve(result);
       }
-      function onOk() { cleanup(true); }
-      function onCancel() { cleanup(false); }
+
+      function onOk() {
+        cleanup(true);
+      }
+
+      function onCancel() {
+        cleanup(false);
+      }
 
       okBtn.addEventListener('click', onOk);
       cancelBtn.addEventListener('click', onCancel);
     });
   }
 
-  // ==========================================================================
-  // OFFLINE OVERLAY
-  // ==========================================================================
   function showOfflineOverlay() {
     const overlay = document.getElementById('offline-overlay');
     if (!overlay) return;
+
     overlay.style.display = 'flex';
 
     if (retryTimerInterval) clearInterval(retryTimerInterval);
@@ -574,7 +564,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     retryTimerInterval = setInterval(() => {
       retrySecondsLeft -= 1;
-      if (retrySecondsLeft <= 0) { retrySecondsLeft = 3; socket.connect(); }
+      if (retrySecondsLeft <= 0) {
+        retrySecondsLeft = 3;
+        socket.connect();
+      }
       if (timer) timer.textContent = `Retrying in ${retrySecondsLeft}s…`;
     }, 1000);
   }
@@ -601,15 +594,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ==========================================================================
-  // CONNECTION UI
-  // ==========================================================================
   function updateConnectionUI(isConnected) {
-    // Sidebar indicator
     const dots = document.querySelectorAll('.indicator-dot');
     const labels = document.querySelectorAll('.status-label');
-    dots.forEach(d => { d.className = `indicator-dot ${isConnected ? 'connected' : 'disconnected'}`; });
-    labels.forEach(l => { if (l) l.textContent = isConnected ? 'Connected' : 'Reconnecting…'; });
+
+    dots.forEach(d => {
+      d.className = `indicator-dot ${isConnected ? 'connected' : 'disconnected'}`;
+    });
+
+    labels.forEach(l => {
+      if (l) l.textContent = isConnected ? 'Connected' : 'Reconnecting…';
+    });
 
     const statusText = document.getElementById('network-status-text');
     if (statusText) statusText.textContent = isConnected ? 'Connected to server' : 'Connecting…';
@@ -621,12 +616,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       state.networkIPs = data.networkIPs || [];
       renderNetworkInfo();
-    } catch (e) { /* silent */ }
+    } catch (e) {
+      // silent fallback
+    }
   }
 
-  // ==========================================================================
-  // AUDIO CHIME
-  // ==========================================================================
   function playAudioChime() {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -645,12 +639,11 @@ document.addEventListener('DOMContentLoaded', () => {
         osc.start(t);
         osc.stop(t + 0.5);
       });
-    } catch (e) { /* silent */ }
+    } catch (e) {
+      // silent fallback
+    }
   }
 
-  // ==========================================================================
-  // VIEW 1: STUDENT
-  // ==========================================================================
   const selectedItems = new Set();
 
   function initStudentView() {
@@ -660,8 +653,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const chip = e.target.closest('.chip');
         if (!chip) return;
         const item = chip.dataset.item;
-        if (selectedItems.has(item)) { selectedItems.delete(item); chip.classList.remove('selected'); }
-        else { selectedItems.add(item); chip.classList.add('selected'); }
+        if (selectedItems.has(item)) {
+          selectedItems.delete(item);
+          chip.classList.remove('selected');
+        } else {
+          selectedItems.add(item);
+          chip.classList.add('selected');
+        }
       });
     }
 
@@ -669,12 +667,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (form) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
+
         const counterId = form.querySelector('input[name="counterId"]:checked').value;
         const studentName = document.getElementById('studentName').value.trim();
         const studentId = document.getElementById('studentId').value.trim();
         const notes = document.getElementById('orderNotes').value.trim();
         const items = Array.from(selectedItems);
-        if (!items.length && !notes) items.push('Standard Meal Deal');
+
+        if (!items.length && !notes) {
+          items.push('Standard Meal Deal');
+        }
 
         const btn = document.getElementById('btn-join');
         try {
@@ -687,7 +689,9 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ counterId, studentName, studentId, items, notes })
           });
-          const data = await res.json();
+
+          const data = await response.json();
+
           if (data.success) {
             saveMyTicket(data.ticket);
             showToast(`Ticket ${data.ticket.ticketNumber} issued`, 'success');
@@ -696,17 +700,22 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Failed to join: ' + (data.error || 'Unknown error'), 'error');
           }
         } catch (err) {
-          alert('Network connection error: ' + err.message);
+          showToast('Network error: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="arrow-right"></i> Join Queue`;
+          if (window.lucide) window.lucide.createIcons();
         }
       });
     }
 
-    // Cancel Ticket Button
     const cancelBtn = document.getElementById('btn-cancel-ticket');
     if (cancelBtn) {
       cancelBtn.addEventListener('click', async () => {
         if (!state.myTicket) return;
-        if (!confirm('Are you sure you want to cancel your queue ticket?')) return;
+
+        const confirmed = await showConfirm('Leave queue?', 'You will lose your position in line. This cannot be undone.');
+        if (!confirmed) return;
 
         try {
           await fetch(`${SERVER_URL}/api/queue/leave`, {
@@ -714,43 +723,37 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ counterId: state.myTicket.counterId, ticketId: state.myTicket.id })
           });
+
+          showToast('You have left the queue', 'warning');
           clearMyTicket();
           renderStudentTracker();
         } catch (err) {
-          alert('Error cancelling ticket: ' + err.message);
+          showToast('Error: ' + err.message, 'error');
         }
       });
     }
 
-    document.getElementById('btn-cancel-ticket')?.addEventListener('click', async () => {
-      if (!state.myTicket) return;
-      const confirmed = await showConfirm('Leave queue?', 'You will lose your position in line. This cannot be undone.');
-      if (!confirmed) return;
-      try {
-        await fetch('/api/queue/leave', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ counterId: state.myTicket.counterId, ticketId: state.myTicket.id })
-        });
-        showToast('You have left the queue', 'warning');
+    const newTicketBtn = document.getElementById('btn-new-ticket');
+    if (newTicketBtn) {
+      newTicketBtn.addEventListener('click', () => {
         clearMyTicket();
         renderStudentTracker();
-      } catch (err) {
-        showToast('Error: ' + err.message, 'error');
-      }
-    });
+      });
+    }
 
-    document.getElementById('btn-new-ticket')?.addEventListener('click', () => {
-      clearMyTicket();
-      renderStudentTracker();
-    });
-
-    document.getElementById('btn-sound-toggle')?.addEventListener('click', () => {
-      state.soundEnabled = !state.soundEnabled;
-      document.getElementById('sound-text').textContent = state.soundEnabled ? 'Sound On' : 'Sound Off';
-      document.getElementById('sound-icon').setAttribute('data-lucide', state.soundEnabled ? 'volume-2' : 'volume-x');
-      if (window.lucide) window.lucide.createIcons();
-    });
+    const soundToggle = document.getElementById('btn-sound-toggle');
+    if (soundToggle) {
+      soundToggle.addEventListener('click', () => {
+        state.soundEnabled = !state.soundEnabled;
+        const soundText = document.getElementById('sound-text');
+        const soundIcon = document.getElementById('sound-icon');
+        if (soundText) soundText.textContent = state.soundEnabled ? 'Sound On' : 'Sound Off';
+        if (soundIcon) {
+          soundIcon.setAttribute('data-lucide', state.soundEnabled ? 'volume-2' : 'volume-x');
+        }
+        if (window.lucide) window.lucide.createIcons();
+      });
+    }
   }
 
   function renderStudentTracker() {
@@ -764,7 +767,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (joinCard) joinCard.style.display = 'block';
     if (trackerCard) trackerCard.style.display = 'block';
 
-    // Empty state: client has not joined a queue yet
     if (!state.myTicket) {
       if (emptyState) emptyState.style.display = 'flex';
       if (activeDisplay) activeDisplay.style.display = 'none';
@@ -783,95 +785,93 @@ document.addEventListener('DOMContentLoaded', () => {
     if (panelDesc) panelDesc.style.display = 'none';
 
     const t = state.myTicket;
-    document.getElementById('ticket-counter-name').textContent = t.counterName || 'Cafeteria Counter';
-    document.getElementById('ticket-number-display').textContent = t.ticketNumber;
-    document.getElementById('ticket-student-name').textContent = t.studentName;
-    document.getElementById('ticket-items-list').textContent = (t.items?.length) ? t.items.join(', ') : 'Standard Meal';
-    document.getElementById('ticket-joined-time').textContent = new Date(t.timestampMs || Date.now()).toLocaleTimeString();
 
-    const readyCallout = document.getElementById('ready-callout');
-    const expiredBanner = document.getElementById('ticket-expired-banner');
+    const counterNameEl = document.getElementById('ticket-counter-name');
+    const ticketNumberEl = document.getElementById('ticket-number-display');
+    const studentNameEl = document.getElementById('ticket-student-name');
+    const itemsListEl = document.getElementById('ticket-items-list');
+    const joinedTimeEl = document.getElementById('ticket-joined-time');
     const statusPill = document.getElementById('ticket-status-pill');
     const statusText = document.getElementById('ticket-status-text');
     const positionEl = document.getElementById('ticket-position');
     const waitEstEl = document.getElementById('ticket-wait-est');
+    const totalWaitingEl = document.getElementById('ticket-total-waiting');
     const cancelBtn = document.getElementById('btn-cancel-ticket');
     const newTicketBtn = document.getElementById('btn-new-ticket');
-    const ticketNumEl = document.getElementById('ticket-number-display');
+    const readyCallout = document.getElementById('ready-callout');
+    const expiredBanner = document.getElementById('ticket-expired-banner');
+
+    if (counterNameEl) counterNameEl.textContent = t.counterName || 'Cafeteria Counter';
+    if (ticketNumberEl) ticketNumberEl.textContent = t.ticketNumber;
+    if (studentNameEl) studentNameEl.textContent = t.studentName;
+    if (itemsListEl) itemsListEl.textContent = t.items && t.items.length ? t.items.join(', ') : 'Standard Meal';
+    if (joinedTimeEl) joinedTimeEl.textContent = new Date(t.timestampMs || Date.now()).toLocaleTimeString();
 
     if (expiredBanner) expiredBanner.style.display = 'none';
     if (readyCallout) readyCallout.style.display = 'none';
-    if (ticketNumEl) ticketNumEl.classList.remove('strikethrough');
 
     const counter = state.serverQueues?.counters?.[t.counterId];
 
-    // State 1: Currently being called / served at counter
     if (counter?.servingTicket && (counter.servingTicket.id === t.id || counter.servingTicket.ticketNumber === t.ticketNumber)) {
       t.status = 'now_serving';
-      statusPill.className = 'ticket-status-pill status-serving';
-      statusText.innerHTML = '<i data-lucide="bell"></i> Now Serving';
-      positionEl.textContent = 'NOW';
-      positionEl.style.color = '';
-      waitEstEl.textContent = '0 min';
-      if (readyCallout) {
-        readyCallout.style.display = 'flex';
-        document.getElementById('ready-counter-name').textContent = t.counterName;
-        document.getElementById('ready-ticket-num').textContent = t.ticketNumber;
-      }
+      if (statusPill) statusPill.className = 'ticket-status-pill status-serving';
+      if (statusText) statusText.innerHTML = '<i data-lucide="bell"></i> Now Serving';
+      if (positionEl) positionEl.textContent = 'NOW';
+      if (waitEstEl) waitEstEl.textContent = '0 min';
       if (cancelBtn) cancelBtn.style.display = 'none';
       if (newTicketBtn) newTicketBtn.style.display = 'block';
+      if (readyCallout) {
+        readyCallout.style.display = 'flex';
+        const readyCounterName = document.getElementById('ready-counter-name');
+        const readyTicketNum = document.getElementById('ready-ticket-num');
+        if (readyCounterName) readyCounterName.textContent = t.counterName;
+        if (readyTicketNum) readyTicketNum.textContent = t.ticketNumber;
+      }
       if (window.lucide) window.lucide.createIcons();
       return;
     }
 
-    // Check if waiting in active FIFO queue
     const activeQueue = counter?.activeQueue || [];
     const foundIdx = activeQueue.findIndex(item => item.id === t.id || item.ticketNumber === t.ticketNumber);
 
     if (foundIdx !== -1) {
-      // State 2: Waiting in queue
       const q = activeQueue[foundIdx];
       t.status = 'in_queue';
-      statusPill.className = 'ticket-status-pill status-in-queue';
-      statusText.innerHTML = '<i data-lucide="clock"></i> In Queue';
-      positionEl.textContent = `#${q.position}`;
-      positionEl.style.color = '';
-      document.getElementById('ticket-total-waiting').textContent = `of ${activeQueue.length} in queue`;
-      waitEstEl.textContent = `~${q.estimatedWaitMinutes} min`;
+      if (statusPill) statusPill.className = 'ticket-status-pill status-in-queue';
+      if (statusText) statusText.innerHTML = '<i data-lucide="clock"></i> In Queue';
+      if (positionEl) positionEl.textContent = `#${q.position}`;
+      if (totalWaitingEl) totalWaitingEl.textContent = `of ${activeQueue.length} in queue`;
+      if (waitEstEl) waitEstEl.textContent = `~${q.estimatedWaitMinutes} min`;
       if (readyCallout) readyCallout.style.display = 'none';
       if (cancelBtn) cancelBtn.style.display = 'block';
       if (newTicketBtn) newTicketBtn.style.display = 'none';
     } else {
-      // State 3: Either completed, marked no-show, or cancelled
       if (cancelBtn) cancelBtn.style.display = 'none';
       if (newTicketBtn) newTicketBtn.style.display = 'block';
 
       if (t.status === 'no_show') {
-        statusPill.className = 'ticket-status-pill status-expired';
-        statusText.innerHTML = '<i data-lucide="user-x"></i> No-Show / Missed';
-        positionEl.textContent = 'MISSED';
-        waitEstEl.textContent = '0 min';
-        if (ticketNumEl) ticketNumEl.classList.add('strikethrough');
+        if (statusPill) statusPill.className = 'ticket-status-pill status-expired';
+        if (statusText) statusText.innerHTML = '<i data-lucide="user-x"></i> No-Show / Missed';
+        if (positionEl) positionEl.textContent = 'MISSED';
+        if (waitEstEl) waitEstEl.textContent = '0 min';
+        if (ticketNumberEl) ticketNumberEl.classList.add('strikethrough');
         if (expiredBanner) {
           expiredBanner.style.display = 'flex';
           const expDesc = expiredBanner.querySelector('.alert-body p');
           if (expDesc) expDesc.textContent = 'Your ticket was marked as no-show by staff. Please proceed to the counter or join a new line.';
         }
       } else {
-        // State 4: Completed & Handed Over
         t.status = 'completed';
-        statusPill.className = 'ticket-status-pill status-completed';
-        statusText.innerHTML = '<i data-lucide="check-check"></i> Completed & Handed Over';
-        positionEl.textContent = 'SERVED';
-        waitEstEl.textContent = '0 min';
+        if (statusPill) statusPill.className = 'ticket-status-pill status-completed';
+        if (statusText) statusText.innerHTML = '<i data-lucide="check-check"></i> Completed & Handed Over';
+        if (positionEl) positionEl.textContent = 'SERVED';
+        if (waitEstEl) waitEstEl.textContent = '0 min';
       }
     }
+
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // ==========================================================================
-  // VIEW 2: STAFF DASHBOARD
-  // ==========================================================================
   function initStaffView() {
     document.querySelectorAll('#staff-counter-tabs .tab-btn').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -882,7 +882,8 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    document.getElementById('btn-serve-next')?.addEventListener('click', () => serveNextStudent());
+    const serveBtn = document.getElementById('btn-serve-next');
+    if (serveBtn) serveBtn.addEventListener('click', serveNextStudent);
 
     window.addEventListener('keydown', (e) => {
       if (state.activeTab === 'staff' && e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
@@ -891,23 +892,40 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    document.getElementById('btn-complete-serving')?.addEventListener('click', () => completeServing('complete'));
-    document.getElementById('btn-recall-serving')?.addEventListener('click', () => {
-      if (!state.serverQueues) return;
-      const counter = state.serverQueues.counters[state.staffCounterId];
-      if (counter?.servingTicket) { socket.emit('staff:recall', { ticket: counter.servingTicket }); playAudioChime(); }
-    });
-    document.getElementById('btn-noshow-serving')?.addEventListener('click', () => completeServing('no_show'));
+    const completeBtn = document.getElementById('btn-complete-serving');
+    if (completeBtn) completeBtn.addEventListener('click', () => completeServing('complete'));
+
+    const recallBtn = document.getElementById('btn-recall-serving');
+    if (recallBtn) {
+      recallBtn.addEventListener('click', () => {
+        if (!state.serverQueues) return;
+        const counter = state.serverQueues.counters[state.staffCounterId];
+        if (counter?.servingTicket) {
+          socket.emit('staff:recall', { ticket: counter.servingTicket });
+          playAudioChime();
+        }
+      });
+    }
+
+    const noShowBtn = document.getElementById('btn-noshow-serving');
+    if (noShowBtn) noShowBtn.addEventListener('click', () => completeServing('no_show'));
   }
 
   async function serveNextStudent() {
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {})
+      };
+
       const res = await fetch(`${SERVER_URL}/api/staff/serve-next`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ counterId: state.staffCounterId })
       });
+
       const data = await res.json();
+
       if (!data.success) {
         showToast(data.message || data.error || 'No students waiting', 'warning');
       } else {
@@ -922,13 +940,25 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!state.serverQueues) return;
     const counter = state.serverQueues.counters[state.staffCounterId];
     if (!counter?.servingTicket) return;
+
     try {
-      await fetch(`${SERVER_URL}/api/staff/complete`, {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {})
+      };
+
+      const res = await fetch(`${SERVER_URL}/api/staff/complete`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ counterId: state.staffCounterId, ticketId: counter.servingTicket.id, action })
+        body: JSON.stringify({
+          counterId: state.staffCounterId,
+          ticketId: counter.servingTicket.id,
+          action
+        })
       });
+
       const data = await res.json();
+
       if (data.success) {
         showToast(action === 'no_show' ? 'Marked as no-show' : 'Ticket completed', 'success');
       } else {
@@ -941,58 +971,81 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderStaffDashboard() {
     if (!state.serverQueues) return;
+
     const data = state.serverQueues;
     const counter = data.counters[state.staffCounterId];
 
-    document.getElementById('staff-count-hm').textContent = data.counters['hot-meals']?.activeCount || 0;
-    document.getElementById('staff-count-sd').textContent = data.counters['snacks-drinks']?.activeCount || 0;
-    document.getElementById('staff-count-ex').textContent = data.counters['express-deli']?.activeCount || 0;
-    document.getElementById('stat-total-waiting').textContent = data.totalActive;
-    document.getElementById('stat-total-served').textContent = data.totalServed;
-    document.getElementById('stat-avg-wait').textContent = `${counter?.avgWaitMinutes || 0}m`;
+    const hotCount = document.getElementById('staff-count-hm');
+    const sdCount = document.getElementById('staff-count-sd');
+    const exCount = document.getElementById('staff-count-ex');
+    const totalWaitingEl = document.getElementById('stat-total-waiting');
+    const totalServedEl = document.getElementById('stat-total-served');
+    const avgWaitEl = document.getElementById('stat-avg-wait');
+
+    if (hotCount) hotCount.textContent = data.counters['hot-meals']?.activeCount || 0;
+    if (sdCount) sdCount.textContent = data.counters['snacks-drinks']?.activeCount || 0;
+    if (exCount) exCount.textContent = data.counters['express-deli']?.activeCount || 0;
+    if (totalWaitingEl) totalWaitingEl.textContent = data.totalActive;
+    if (totalServedEl) totalServedEl.textContent = data.totalServed;
+    if (avgWaitEl) avgWaitEl.textContent = `${counter?.avgWaitMinutes || 0}m`;
 
     if (!counter) return;
-    document.getElementById('staff-current-counter-title').textContent = `${counter.name} — Controls`;
-    document.getElementById('staff-queue-count-badge').textContent = `${counter.activeCount} waiting`;
+
+    const titleEl = document.getElementById('staff-current-counter-title');
+    const queueCountBadge = document.getElementById('staff-queue-count-badge');
+    if (titleEl) titleEl.textContent = `${counter.name} — Controls`;
+    if (queueCountBadge) queueCountBadge.textContent = `${counter.activeCount} waiting`;
 
     const emptyState = document.getElementById('serving-empty-state');
     const activeContent = document.getElementById('serving-active-content');
 
     if (counter.servingTicket) {
-      emptyState.style.display = 'none';
-      activeContent.style.display = 'block';
+      if (emptyState) emptyState.style.display = 'none';
+      if (activeContent) activeContent.style.display = 'block';
+
       const t = counter.servingTicket;
-      document.getElementById('staff-serving-number').textContent = t.ticketNumber;
-      document.getElementById('staff-serving-name').textContent = t.studentName + (t.studentId ? ` (${t.studentId})` : '');
-      document.getElementById('staff-serving-items').innerHTML = (t.items || []).map(i => `<span class="item-badge">${i}</span>`).join('');
-      document.getElementById('staff-serving-notes').textContent = t.notes ? `"${t.notes}"` : '';
+      const staffServingNumber = document.getElementById('staff-serving-number');
+      const staffServingName = document.getElementById('staff-serving-name');
+      const staffServingItems = document.getElementById('staff-serving-items');
+      const staffServingNotes = document.getElementById('staff-serving-notes');
+
+      if (staffServingNumber) staffServingNumber.textContent = t.ticketNumber;
+      if (staffServingName) staffServingName.textContent = t.studentName + (t.studentId ? ` (${t.studentId})` : '');
+      if (staffServingItems) {
+        staffServingItems.innerHTML = (t.items || []).map(item => `<span class="item-badge">${item}</span>`).join('');
+      }
+      if (staffServingNotes) {
+        staffServingNotes.textContent = t.notes ? `"${t.notes}"` : '';
+      }
     } else {
-      emptyState.style.display = 'flex';
-      activeContent.style.display = 'none';
+      if (emptyState) emptyState.style.display = 'flex';
+      if (activeContent) activeContent.style.display = 'none';
     }
 
     const queueList = document.getElementById('staff-queue-list');
-    if (!counter.activeQueue?.length) {
-      queueList.innerHTML = `<div class="empty-state"><i data-lucide="check-circle-2"></i><p>No one is waiting. A quiet moment.</p></div>`;
+    if (!counter.activeQueue || counter.activeQueue.length === 0) {
+      if (queueList) {
+        queueList.innerHTML = `<div class="empty-state"><i data-lucide="check-circle-2"></i><p>No one is waiting. A quiet moment.</p></div>`;
+      }
     } else {
-      queueList.innerHTML = counter.activeQueue.map((item, idx) => `
-        <div class="queue-item">
-          <div class="queue-pos">${idx + 1}</div>
-          <div class="queue-ticket-num">${item.ticketNumber}</div>
-          <div class="queue-meta">
-            <strong>${item.studentName}</strong>
-            <span>${(item.items || []).join(', ') || 'Standard Order'}${item.notes ? ` · ${item.notes}` : ''}</span>
+      if (queueList) {
+        queueList.innerHTML = counter.activeQueue.map((item, idx) => `
+          <div class="queue-item">
+            <div class="queue-pos">${idx + 1}</div>
+            <div class="queue-ticket-num">${item.ticketNumber}</div>
+            <div class="queue-meta">
+              <strong>${item.studentName}</strong>
+              <span>${(item.items || []).join(', ') || 'Standard Order'}${item.notes ? ` · ${item.notes}` : ''}</span>
+            </div>
+            <span class="queue-item-badge">~${item.estimatedWaitMinutes}m</span>
           </div>
-          <span class="queue-item-badge">~${item.estimatedWaitMinutes}m</span>
-        </div>
-      `).join('');
+        `).join('');
+      }
     }
+
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // ==========================================================================
-  // VIEW 3: TV DISPLAY
-  // ==========================================================================
   let lastTvBoardSignature = null;
 
   const TV_COUNTER_META = {
@@ -1008,11 +1061,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getTvBoardSignature(queues) {
     if (!queues?.counters) return '';
-    return Object.values(queues.counters).map(c => {
-      const serving = c.servingTicket;
-      const next = (c.activeQueue || []).slice(0, 5).map(t => t.ticketNumber).join(',');
-      return `${c.id}:${serving?.ticketNumber || ''}:${serving?.studentName || ''}:${c.activeQueue?.length || 0}:${next}`;
-    }).join('|');
+    return Object.values(queues.counters)
+      .map(c => {
+        const serving = c.servingTicket;
+        const next = (c.activeQueue || []).slice(0, 5).map(t => t.ticketNumber).join(',');
+        return `${c.id}:${serving?.ticketNumber || ''}:${serving?.studentName || ''}:${c.activeQueue?.length || 0}:${next}`;
+      })
+      .join('|');
   }
 
   function buildTvCounterCard(counter) {
@@ -1065,7 +1120,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const grid = document.getElementById('tv-counters-grid');
     if (!grid) return;
 
-    // No queue state yet — show idle placeholders so the board is never blank
     if (!state.serverQueues?.counters) {
       if (grid.childElementCount === 0) {
         const placeholders = [
@@ -1080,13 +1134,48 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const signature = getTvBoardSignature(state.serverQueues);
-    // Avoid rebuilding the grid every second (that re-triggered fade-out and looked empty)
     if (!force && signature === lastTvBoardSignature && grid.childElementCount > 0) return;
     lastTvBoardSignature = signature;
 
     grid.innerHTML = Object.values(state.serverQueues.counters).map(buildTvCounterCard).join('');
     if (window.lucide) window.lucide.createIcons();
   }
+
+  setInterval(() => {
+    if (state.activeTab === 'tv') updateTvClock();
+  }, 1000);
+
+  async function fetchQueueState() {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/queues`);
+      const data = await res.json();
+      if (data?.counters) {
+        state.serverQueues = data;
+        if (state.activeTab === 'tv') renderTVDisplay(true);
+        else renderAllViews();
+      }
+    } catch (e) {
+      // socket will retry
+    }
+  }
+
+  function initTestBenchView() {
+    const runBtn = document.getElementById('btn-run-concurrency-test');
+    if (runBtn) {
+      runBtn.addEventListener('click', async () => {
+        const counterId = document.getElementById('sim-counter-select').value;
+        const count = parseInt(document.getElementById('sim-count-select').value, 10);
+
+        const benchLog = document.getElementById('bench-log-container');
+        const appendLog = (msg, type = 'info') => {
+          if (!benchLog) return;
+          const p = document.createElement('p');
+          p.className = `log-entry log-${type}`;
+          p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+          benchLog.prepend(p);
+        };
+
+        appendLog(`Launching ${count} parallel requests to '${counterId}'…`, 'info');
 
         try {
           runBtn.disabled = true;
@@ -1095,50 +1184,38 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ counterId, count })
           });
+
           const data = await res.json();
           runBtn.disabled = false;
 
-  // Bootstrap queue state via REST so Display works even before Socket.IO delivers
-  async function fetchQueueState() {
-    try {
-      const res = await fetch('/api/queues');
-      const data = await res.json();
-      if (data?.counters) {
-        state.serverQueues = data;
-        if (state.activeTab === 'tv') renderTVDisplay(true);
-        else renderAllViews();
-      }
-    } catch (e) { /* socket will retry */ }
-  }
-  fetchQueueState();
+          if (data.success) {
+            appendLog(`${data.processedCount} requests processed in ${data.durationMs}ms`, 'success');
+            data.tickets.forEach(t => appendLog(`  ${t.ticketNumber} > #${t.position} ${t.studentName}`, 'success'));
+          } else {
+            appendLog(`Failed: ${data.error}`, 'warn');
+          }
+        } catch (err) {
+          runBtn.disabled = false;
+          appendLog(`Network error: ${err.message}`, 'warn');
+        }
+      });
+    }
 
     const resetBtn = document.getElementById('btn-reset-queues');
     if (resetBtn) {
       resetBtn.addEventListener('click', async () => {
-        if (!confirm('Reset all cafeteria queues?')) return;
+        const confirmed = await showConfirm('Reset all queues?', 'This will remove all tickets from every counter.');
+        if (!confirmed) return;
+
         try {
           await fetch(`${SERVER_URL}/api/queue/reset`, { method: 'POST' });
-          logBench('🔄 Reset all cafeteria queues to initial state.', 'info');
+          logBench('All queues reset', 'info');
+          showToast('All queues have been reset', 'warning');
         } catch (e) {
-          logBench('Error resetting queues: ' + e.message, 'warn');
+          logBench('Reset failed: ' + e.message, 'warn');
         }
-      } catch (err) {
-        btn.disabled = false;
-        logBench(`Network error: ${err.message}`, 'warn');
-      }
-    });
-
-    document.getElementById('btn-reset-queues')?.addEventListener('click', async () => {
-      const confirmed = await showConfirm('Reset all queues?', 'This will remove all tickets from every counter.');
-      if (!confirmed) return;
-      try {
-        await fetch('/api/queue/reset', { method: 'POST' });
-        logBench('All queues reset', 'info');
-        showToast('All queues have been reset', 'warning');
-      } catch (e) {
-        logBench('Reset failed: ' + e.message, 'warn');
-      }
-    });
+      });
+    }
   }
 
   function logBench(msg, type = 'info') {
@@ -1154,11 +1231,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const list = document.getElementById('network-ip-list');
     const qrText = document.getElementById('qr-url-display');
     const qrContainer = document.getElementById('qrcode-container');
+
     if (!list) return;
 
-    const serverUrl = new URL(SERVER_URL || window.location.origin);
-    const port = serverUrl.port || '8080';
-    const primaryUrl = serverUrl.origin;
+    const primaryUrl = SERVER_URL || window.location.origin;
 
     let html = `
       <div class="ip-box">
@@ -1168,49 +1244,76 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
 
     state.networkIPs.forEach(ip => {
-      html += `<div class="ip-item"><span class="ip-label">${ip.interface}</span><code class="ip-value">http://${ip.address}:${port}</code></div>`;
+      html += `<div class="ip-item"><span class="ip-label">${ip.interface}</span><code class="ip-value">http://${ip.address}:${window.location.port || '3000'}</code></div>`;
     });
+
     list.innerHTML = html;
+
     if (qrText) qrText.textContent = primaryUrl;
 
     if (qrContainer && window.QRCode) {
       qrContainer.innerHTML = '';
-      new window.QRCode(qrContainer, { text: primaryUrl, width: 120, height: 120, colorDark: '#000000', colorLight: '#ffffff', correctLevel: window.QRCode.CorrectLevel.H });
+      new window.QRCode(qrContainer, {
+        text: primaryUrl,
+        width: 120,
+        height: 120,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: window.QRCode.CorrectLevel.H
+      });
     }
   }
 
-  // ==========================================================================
-  // MODALS
-  // ==========================================================================
   function initModals() {
-    document.getElementById('btn-modal-dismiss')?.addEventListener('click', () => {
-      document.getElementById('ready-modal').style.display = 'none';
-    });
+    const modalDismissBtn = document.getElementById('btn-modal-dismiss');
+    if (modalDismissBtn) {
+      modalDismissBtn.addEventListener('click', () => {
+        const readyModal = document.getElementById('ready-modal');
+        if (readyModal) readyModal.style.display = 'none';
+      });
+    }
   }
 
   function showOrderReadyModal(ticket, counterId) {
     const modal = document.getElementById('ready-modal');
     if (!modal) return;
-    document.getElementById('modal-ticket-num').textContent = ticket.ticketNumber;
-    document.getElementById('modal-counter-name').textContent = ticket.counterName || counterId;
+
+    const modalTicketNum = document.getElementById('modal-ticket-num');
+    const modalCounterName = document.getElementById('modal-counter-name');
+
+    if (modalTicketNum) modalTicketNum.textContent = ticket.ticketNumber;
+    if (modalCounterName) modalCounterName.textContent = ticket.counterName || counterId;
+
     modal.style.display = 'flex';
   }
 
-  // ==========================================================================
-  // MASTER RENDER
-  // ==========================================================================
   function renderAllViews() {
     if (state.serverQueues) {
       const c = state.serverQueues.counters;
-      document.getElementById('badge-hot-meals').textContent = c['hot-meals']?.activeCount || 0;
-      document.getElementById('badge-snacks-drinks').textContent = c['snacks-drinks']?.activeCount || 0;
-      document.getElementById('badge-express-deli').textContent = c['express-deli']?.activeCount || 0;
 
-      document.getElementById('header-total-waiting').textContent = state.serverQueues.totalActive;
-      document.getElementById('header-total-served').textContent = state.serverQueues.totalServed;
+      const badgeHot = document.getElementById('badge-hot-meals');
+      const badgeSnacks = document.getElementById('badge-snacks-drinks');
+      const badgeExpress = document.getElementById('badge-express-deli');
+
+      if (badgeHot) badgeHot.textContent = c['hot-meals']?.activeCount || 0;
+      if (badgeSnacks) badgeSnacks.textContent = c['snacks-drinks']?.activeCount || 0;
+      if (badgeExpress) badgeExpress.textContent = c['express-deli']?.activeCount || 0;
+
+      const totalWaiting = document.getElementById('header-total-waiting');
+      const totalServed = document.getElementById('header-total-served');
+
+      if (totalWaiting) totalWaiting.textContent = state.serverQueues.totalActive;
+      if (totalServed) totalServed.textContent = state.serverQueues.totalServed;
     }
+
     renderStudentTracker();
-    if (state.activeTab === 'staff') renderStaffDashboard();
-    else if (state.activeTab === 'tv') renderTVDisplay();
+
+    if (state.activeTab === 'staff') {
+      renderStaffDashboard();
+    } else if (state.activeTab === 'tv') {
+      renderTVDisplay();
+    }
   }
+
+  fetchQueueState();
 });

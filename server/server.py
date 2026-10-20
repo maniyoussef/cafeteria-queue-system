@@ -323,7 +323,30 @@ class Server(BaseHTTPRequestHandler):
                 self.serve_static(path)
         except Exception as err:  # never leave the browser hanging
             self.send_json(500, {"success": False, "error": str(err)})
+    # ---- QUERY: safe, idempotent search that carries a body (IETF draft) ----
+    def do_QUERY(self):
+        path = self.path_only()
+        try:
+            body = self.read_json_body()
+        except (ValueError, json.JSONDecodeError):
+            self.send_json(400, {"success": False, "error": "Invalid JSON body"})
+            return
 
+        if path == "/api/queues":
+            state = queue_manager.get_state()
+            counter_filter = body.get("counterId")
+            if counter_filter:
+                one = state["counters"].get(counter_filter)
+                if one is None:
+                    self.send_json(404, {"status": "error",
+                                         "message": "resource not found"})
+                    return
+                self.send_json(200, {"counter": one,
+                                     "lastUpdated": state["lastUpdated"]})
+            else:
+                self.send_json(200, state)
+        else:
+            self.send_json(404, {"status": "error", "message": "resource not found"})
     # ---- POST ----
     def do_POST(self):
         path = self.path_only()
